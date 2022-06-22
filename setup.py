@@ -1,10 +1,24 @@
 #! /usr/bin/env python
-"""A template for scikit-learn compatible packages."""
+"""A more flexible alternative to scikit-learn Pipelines"""
 
 import codecs
 import os
 
 from setuptools import find_packages, setup
+
+
+def parse_requirements(filename):
+    # Copy dependencies from requirements file
+    with open(filename, encoding="utf-8") as f:
+        requirements = [line.strip() for line in f.read().splitlines()]
+        requirements = [
+            line.split("#")[0].strip()
+            for line in requirements
+            if not line.startswith("#")
+        ]
+
+    return requirements
+
 
 # get __version__ from _version.py
 ver_file = os.path.join("skdag", "_version.py")
@@ -12,16 +26,18 @@ with open(ver_file) as f:
     exec(f.read())
 
 DISTNAME = "skdag"
-DESCRIPTION = "A template for scikit-learn compatible packages."
-with codecs.open("README.rst", encoding="utf-8-sig") as f:
+DESCRIPTION = "A more flexible alternative to scikit-learn Pipelines"
+
+with codecs.open("README.rst", encoding="utf-8") as f:
     LONG_DESCRIPTION = f.read()
-MAINTAINER = "V. Birodkars, G. Lemaitre"
-MAINTAINER_EMAIL = "vighneshbirodkar@nyu.edu, g.lemaitre58@gmail.com"
-URL = "https://github.com/scikit-learn-contrib/project-template"
+
+MAINTAINER = "big-o"
+MAINTAINER_EMAIL = "big-o@users.noreply.github.com"
+URL = "https://github.com/big-o/skdag"
 LICENSE = "new BSD"
 DOWNLOAD_URL = "https://github.com/scikit-learn-contrib/project-template"
 VERSION = __version__
-INSTALL_REQUIRES = ["numpy", "scipy", "scikit-learn"]
+INSTALL_REQUIRES = parse_requirements("requirements.txt")
 CLASSIFIERS = [
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
