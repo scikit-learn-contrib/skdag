@@ -17,22 +17,16 @@
 .. |ReadTheDocs| image:: https://readthedocs.org/projects/skdag/badge/?version=latest
 .. _ReadTheDocs: https://skdag.readthedocs.io/en/latest/?badge=latest
 
-project-template - A template for scikit-learn contributions
+skdag - A more flexible alternative to scikit-learn Pipelines
 ============================================================
 
 .. _scikit-learn: https://scikit-learn.org
 
-**project-template** is a template project for scikit-learn_ compatible
-extensions.
+**skdag** brings the flexibility of Directed Acyclic Graphs (DAGs) to scikit-learn_.
 
-It aids development of estimators that can be used in scikit-learn pipelines
-and (hyper)parameter search, while facilitating testing (including some API
-compliance), documentation, open source development, packaging, and continuous
-integration.
+It enables the construction of complex workflows to allow data to flow through multiple
+estimators, with one or more start- and endpoints.
 
 .. _documentation: https://skdag.readthedocs.io/en/latest/quick_start.html
 
-Refer to the documentation_ to modify the template for your own scikit-learn
-contribution.
-
-*Thank you for cleanly contributing to the scikit-learn ecosystem!*
+Refer to the documentation_ for usage details.
