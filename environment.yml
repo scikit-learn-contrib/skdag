@@ -1,5 +1,6 @@
 name: project-template
 dependencies:
+  - networkx>2.8
   - numpy
   - scipy
   - scikit-learn
