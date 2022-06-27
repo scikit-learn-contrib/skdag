@@ -5,7 +5,7 @@ from skdag._version import __version__
 __all__ = [
     "DAG",
     "DAGBuilder",
-    "DAGDisplay",
+    "DAGRenderer",
     "DAGStep",
     "__version__",
 ]
