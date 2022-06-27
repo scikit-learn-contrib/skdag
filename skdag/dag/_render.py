@@ -1,5 +1,6 @@
 import networkx as nx
 import stackeddag.core as sd
+from skdag.dag._utils import _is_passthrough
 from sklearn.exceptions import NotFittedError
 from sklearn.utils.estimator_checks import check_is_fitted
 
@@ -63,11 +64,13 @@ class DAGRenderer:
             anode.attr["color"] = gnode.get("color", color)
             anode.attr["fontcolor"] = gnode.get("fontcolor", self.COLORS["white"])
             if "step" in gnode:
-                try:
-                    check_is_fitted(gnode["step"].estimator)
-                    anode.attr["label"] = f"{v}*"
-                except NotFittedError:
-                    pass
+                est = gnode["step"].estimator
+                if not _is_passthrough(est):
+                    try:
+                        check_is_fitted(gnode["step"].estimator)
+                        anode.attr["label"] = f"{v}*"
+                    except NotFittedError:
+                        pass
 
         for u, v in A.edges():
             aedge = A.get_edge(u, v)

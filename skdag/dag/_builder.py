@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 
 import networkx as nx
-from skdag.dag.dag import DAG, DAGStep
+from skdag.dag._dag import DAG, DAGStep
 
 __all__ = ["DAGBuilder"]
 
@@ -24,7 +24,7 @@ class DAGBuilder:
 
         self._validate_graph()
 
-        return step
+        return self
 
     def _validate_name(self, name):
         if not isinstance(name, str):
@@ -50,3 +50,6 @@ class DAGBuilder:
         self._validate_graph()
         # Give the DAG a read-only view of the graph.
         return DAG(graph=self.graph.copy(as_view=True), n_jobs=self.n_jobs)
+
+    def _repr_html_(self):
+        return self.make_dag()._repr_html_()
