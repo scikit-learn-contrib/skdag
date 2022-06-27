@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import networkx as nx
 from skdag.dag._dag import DAG, DAGStep
@@ -13,14 +13,20 @@ class DAGBuilder:
 
     def add_step(self, name, est, deps=None):
         self._validate_name(name)
-        step = DAGStep(name, est)
-        self.graph.add_node(name, step=step)
+        if isinstance(deps, Sequence):
+            deps = {dep: None for dep in deps}
 
         if deps is not None:
             self._validate_deps(deps)
-            for dep in deps:
-                # Since node is new, edges will never form a cycle.
-                self.graph.add_edge(dep, name)
+        else:
+            deps = {}
+
+        step = DAGStep(name, est, deps=deps)
+        self.graph.add_node(name, step=step)
+
+        for dep in deps:
+            # Since node is new, edges will never form a cycle.
+            self.graph.add_edge(dep, name)
 
         self._validate_graph()
 
@@ -34,13 +40,17 @@ class DAGBuilder:
             raise KeyError(f"step with name '{name}' already exists")
 
     def _validate_deps(self, deps):
-        if not isinstance(deps, Sequence) or not all(
-            [isinstance(dep, (str, DAGStep)) for dep in deps]
+        if not isinstance(deps, Mapping) or not all(
+            [isinstance(dep, str) for dep in deps]
         ):
             raise ValueError(
-                "deps parameter must be a sequence of labels or DAGSteps, "
+                "deps parameter must be a map of labels to indices, "
                 f"got '{type(deps)}'."
             )
+
+        missing = [dep for dep in deps if dep not in self.graph]
+        if missing:
+            raise ValueError(f"unresolvable dependencies: {', '.join(sorted(missing))}")
 
     def _validate_graph(self):
         if not nx.algorithms.dag.is_directed_acyclic_graph(self.graph):

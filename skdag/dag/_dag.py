@@ -9,7 +9,7 @@ import networkx as nx
 from skdag.dag._render import DAGRenderer
 from skdag.dag._utils import _is_passthrough, _is_predictor, _is_transformer, _stack
 from sklearn.base import clone
-from sklearn.utils import Bunch, _print_elapsed_time
+from sklearn.utils import Bunch, _print_elapsed_time, _safe_indexing
 from sklearn.utils.metaestimators import _BaseComposition, available_if
 from sklearn.utils.validation import check_memory
 
@@ -115,6 +115,9 @@ class DAGStep:
         The reference name for this step.
     estimator : estimator-like
         The estimator (transformer or predictor) that will be executed by this step.
+    deps : dict
+        A map of dependency names to columns. If columns is ``None``, then all input
+        columns will be selected.
     axis : int, default = 1
         The strategy for merging inputs if there is more than upstream dependency.
         ``axis=0`` will assume all inputs have the same features and stack the rows
@@ -122,9 +125,10 @@ class DAGStep:
         same samples.
     """
 
-    def __init__(self, name, estimator, axis=1):
+    def __init__(self, name, estimator, deps, axis=1):
         self.name = name
         self.estimator = estimator
+        self.deps = deps
         self.axis = axis
         self.is_root = False
         self.is_leaf = False
@@ -173,7 +177,58 @@ class DAG(_BaseComposition):
     which allows you to define the graph by specifying the dependencies of each new
     estimator:
 
+    >>> dag = (
+    ...     DAGBuilder()
+    ...     .add_step("imp", SimpleImputer())
+    ...     .add_step("vitals", "passthrough", deps={"imp": slice(0, 4)})
+    ...     .add_step("blood", PCA(n_components=2, random_state=0), deps={"imp": slice(4, 10)})
+    ...     .add_step("rf", RandomForestRegressor(random_state=0), deps=["blood", "vitals"])
+    ...     .make_dag()
+    ... )
+    o    impute
+    |\
+    o o    blood,vitals
+    |/
+    o    rf
 
+    In the above examples we pass the first four columns directly to a regressor, but
+    the remaining columns have dimensionality reduction applied first before being
+    passed to the same regressor. Note that we can define our graph edges in two
+    different ways: as a dict (if we need to select only certain columns from the source
+    node) or as a simple list (if we want to simply grab all columns from all input
+    nodes).
+
+    The DAG may now be used as an estimator in its own right:
+
+
+    >>> from sklearn import datasets
+    >>> X, y = datasets.load_diabetes(return_X_y=True)
+    >>> y_hat = cmplx.fit_predict(X, y)
+    ... array([...
+
+    Parameters
+    ----------
+
+    graph : networkx.DiGraph
+        A DAG of :class:`skdag.dag.DAGStep` defining the workflow.
+
+    memory : str or object with the joblib.Memory interface, default=None
+        Used to cache the fitted transformers of the pipeline. By default,
+        no caching is performed. If a string is given, it is the path to
+        the caching directory. Enabling caching triggers a clone of
+        the transformers before fitting. Therefore, the transformer
+        instance given to the pipeline cannot be inspected
+        directly. Use the attribute ``named_steps`` or ``steps`` to
+        inspect estimators within the pipeline. Caching the
+        transformers is advantageous when fitting is time consuming.
+
+    verbose : bool, default=False
+        If True, the time elapsed while fitting each step will be printed as it
+        is completed.
+
+    n_jobs : int, default=None
+        Number of jobs to run in parallel.
+        ``None`` means 1 unless in a :obj:`joblib.parallel_backend` context.
     """
 
     # BaseEstimator interface
@@ -197,10 +252,14 @@ class DAG(_BaseComposition):
 
         for i in range(len(steps)):
             name, estimator = steps[i]
-            step = DAGStep(name, estimator)
-            graph.add_node(name, step=step)
+            deps = {}
             if i > 0:
                 dep = steps[i - 1][0]
+                deps[dep] = None
+
+            step = DAGStep(name, estimator, deps)
+            graph.add_node(name, step=step)
+            if deps:
                 graph.add_edge(dep, name)
 
         return cls(graph=graph, **kwargs)
@@ -295,7 +354,10 @@ class DAG(_BaseComposition):
 
                 deps = list(self.graph_.predecessors(step.name))
                 if deps:
-                    X = _stack([Xs[dep] for dep in deps], axis=step.axis)
+                    X = _stack(
+                        [_safe_indexing(Xs[dep], step.deps[dep], axis=1) for dep in deps],
+                        axis=step.axis,
+                    )
                 else:
                     # For root nodes, the destination rather than the source is
                     # specified.
@@ -350,7 +412,10 @@ class DAG(_BaseComposition):
                 transformer = step.estimator
                 deps = list(self.graph_.predecessors(step.name))
                 if deps:
-                    X = _stack([Xs[dep] for dep in deps], axis=step.axis)
+                    X = _stack(
+                        [_safe_indexing(Xs[dep], step.deps[dep], axis=1) for dep in deps],
+                        axis=step.axis,
+                    )
                 else:
                     # For root nodes, the destination rather than the source is
                     # specified.
@@ -452,7 +517,10 @@ class DAG(_BaseComposition):
         for leaf in self._leaves:
             with _print_elapsed_time("DAG", self._log_message(leaf)):
                 deps = self.graph_.predecessors(leaf.name)
-                Xt = _stack([Xts[dep] for dep in deps], axis=leaf.axis)
+                Xt = _stack(
+                    [_safe_indexing(Xts[dep], leaf.deps[dep], axis=1) for dep in deps],
+                    axis=leaf.axis,
+                )
                 fit_params_leaf = fit_params_steps[leaf.name]
                 if leaf.estimator == "passthrough":
                     Xout[leaf.name] = Xt
@@ -474,7 +542,10 @@ class DAG(_BaseComposition):
         for leaf in self._leaves:
             with _print_elapsed_time("DAG", self._log_message(leaf)):
                 deps = self.graph_.predecessors(leaf.name)
-                Xt = _stack([Xts[dep] for dep in deps], axis=leaf.axis)
+                Xt = _stack(
+                    [_safe_indexing(Xts[dep], leaf.deps[dep], axis=1) for dep in deps],
+                    axis=leaf.axis,
+                )
                 fn_params_leaf = fn_params_steps[leaf.name]
                 if leaf.estimator == "passthrough":
                     Xout[leaf.name] = Xt
