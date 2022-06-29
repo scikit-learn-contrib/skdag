@@ -7,9 +7,8 @@ __all__ = ["DAGBuilder"]
 
 
 class DAGBuilder:
-    def __init__(self, n_jobs=None):
+    def __init__(self):
         self.graph = nx.DiGraph()
-        self.n_jobs = n_jobs
 
     def add_step(self, name, est, deps=None):
         self._validate_name(name)
@@ -56,10 +55,10 @@ class DAGBuilder:
         if not nx.algorithms.dag.is_directed_acyclic_graph(self.graph):
             raise TypeError("Workflow is not a DAG.")
 
-    def make_dag(self):
+    def make_dag(self, **kwargs):
         self._validate_graph()
         # Give the DAG a read-only view of the graph.
-        return DAG(graph=self.graph.copy(as_view=True), n_jobs=self.n_jobs)
+        return DAG(graph=self.graph.copy(as_view=True), **kwargs)
 
     def _repr_html_(self):
         return self.make_dag()._repr_html_()
