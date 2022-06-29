@@ -310,7 +310,7 @@ class DAG(_BaseComposition):
     >>> from sklearn import datasets
     >>> X, y = datasets.load_diabetes(return_X_y=True)
     >>> y_hat = cmplx.fit_predict(X, y)
-    ... array([...
+    array([...
 
     Parameters
     ----------
