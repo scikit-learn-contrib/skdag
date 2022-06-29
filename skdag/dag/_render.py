@@ -99,6 +99,10 @@ class DAGRenderer:
             if self._is_empty():
                 return self._EMPTY
 
+            # Edge case: single node, no edges.
+            if len(A.edges()) == 0:
+                return f"o    {next(A.nodes_iter())}\n"
+
             la = []
             for node in A.nodes():
                 la.append((node, node))

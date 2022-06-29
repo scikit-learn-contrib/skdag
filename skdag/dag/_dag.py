@@ -4,6 +4,7 @@ scikit-learn estimators. As the name suggests, data may only flow in one
 direction and can't go back on itself to a previously run step.
 """
 from collections import UserDict
+from copy import deepcopy
 
 import networkx as nx
 from joblib import Parallel, delayed
@@ -236,11 +237,20 @@ class DAGStep:
         self.estimator = estimator
         self.deps = deps
         self.axis = axis
+        self.index = None
         self.is_root = False
         self.is_leaf = False
         self.is_fitted = False
 
         self._hashval = hash((type(self).__name__, self.name))
+
+    def copy(self):
+        return self.__class__(
+            name=self.name,
+            estimator=clone(self.estimator),
+            deps=self.deps.copy(),
+            axis=self.axis,
+        )
 
     def __repr__(self):
         return f"{type(self).__name__}({repr(self.name)}, {repr(self.estimator)})"
@@ -279,24 +289,28 @@ class DAG(_BaseComposition):
     o    pca
     |
     o    lr
+    <BLANKLINE>
 
     For more complex DAGs, it is recommended to use a :class:`skdag.dag.DAGBuilder`,
     which allows you to define the graph by specifying the dependencies of each new
     estimator:
 
+    >>> from skdag import DAGBuilder
     >>> dag = (
     ...     DAGBuilder()
     ...     .add_step("impute", SimpleImputer())
-    ...     .add_step("vitals", "passthrough", deps={"imp": slice(0, 4)})
-    ...     .add_step("blood", PCA(n_components=2, random_state=0), deps={"imp": slice(4, 10)})
-    ...     .add_step("rf", RandomForestRegressor(random_state=0), deps=["blood", "vitals"])
+    ...     .add_step("vitals", "passthrough", deps={"impute": slice(0, 4)})
+    ...     .add_step("blood", PCA(n_components=2, random_state=0), deps={"impute": slice(4, 10)})
+    ...     .add_step("lr", LogisticRegression(random_state=0), deps=["blood", "vitals"])
     ...     .make_dag()
     ... )
+    >>> print(dag)
     o    impute
-    |\
+    |\\
     o o    blood,vitals
     |/
-    o    rf
+    o    lr
+    <BLANKLINE>
 
     In the above examples we pass the first four columns directly to a regressor, but
     the remaining columns have dimensionality reduction applied first before being
@@ -309,7 +323,29 @@ class DAG(_BaseComposition):
 
     >>> from sklearn import datasets
     >>> X, y = datasets.load_diabetes(return_X_y=True)
-    >>> y_hat = cmplx.fit_predict(X, y)
+    >>> dag.fit_predict(X, y)
+    array([...
+
+    In an extension to the scikit-learn estimator interface, DAGs also support multiple
+    inputs and multiple outputs. Let's say we want to compare two different classifiers:
+
+    >>> from sklearn.ensemble import RandomForestClassifier
+    >>> cal = DAG.from_pipeline(
+    ...     [("rf", RandomForestClassifier(random_state=0))]
+    ... )
+    >>> dag2 = dag.join(cal, edges=[("blood", "rf"), ("vitals", "rf")])
+    >>> print(dag2)
+    o    impute
+    |\\
+    o o    blood,vitals
+    |x|
+    o o    lr,rf
+    <BLANKLINE>
+
+    Now our DAG will return two outputs: one from each classifier.
+    Multiple outputs are returned as a :class:`sklearn.utils.Bunch`:
+
+    >>> dag2.fit_predict(X, y)
     array([...
 
     Parameters
@@ -532,7 +568,7 @@ class DAG(_BaseComposition):
         return Xs
 
     def _resolve_inputs(self, X):
-        if isinstance(X, (dict, UserDict)):
+        if isinstance(X, (dict, Bunch, UserDict)):
             inputs = sorted(X.keys())
             if inputs != sorted(root.name for root in self.roots_):
                 raise ValueError(
@@ -550,7 +586,7 @@ class DAG(_BaseComposition):
         return X
 
     def _match_input_format(self, Xin, Xout):
-        if len(self.leaves_) == 1 and not isinstance(Xin, (dict, UserDict)):
+        if len(self.leaves_) == 1 and not isinstance(Xin, (dict, Bunch, UserDict)):
             return Xout[self.leaves_[0].name]
         return Bunch(**Xout)
 
@@ -897,7 +933,9 @@ class DAG(_BaseComposition):
     @property
     def graph_(self):
         if not hasattr(self, "_graph"):
-            self._graph = self.graph.copy(as_view=True)
+            # Create a deep copy, then take a read-only view of it. We should not modify
+            # the original graph.
+            self._graph = deepcopy(self.graph).copy(as_view=True)
 
         return self._graph
 
@@ -942,9 +980,104 @@ class DAG(_BaseComposition):
         if not hasattr(self, "_steps"):
             self._steps = [
                 (node, self.graph_.nodes[node]["step"].estimator)
-                for node in nx.topological_sort(self.graph_)
+                for node in nx.lexicographical_topological_sort(self.graph_)
             ]
         return self._steps
+
+    def join(self, other, edges, **kwargs):
+        """
+        Create a new DAG by joining this DAG to another one, according to the edges
+        specified.
+
+        Parameters
+        ----------
+
+        other : :class:`skdag.dag.DAG`
+            The other DAG to connect to.
+        edges : (str, str) or (str, str, index-like)
+            ``(u, v)`` edges that connect the two DAGs. ``u`` and ``v`` should be the
+            names of steps in the first and second DAG respectively. Optionally a third
+            parameter may be included to specify which columns to pass along the edge.
+        **kwargs : keyword params
+            Any other parameters to pass to the new DAG's constructor.
+
+        Returns
+        -------
+        dag : :class:`skdag.DAG`
+            A new DAG, containing a copy of each of the input DAGs, joined by the
+            specified edges. Note that the original input dags are unmodified.
+
+        Examples
+        --------
+
+        >>> from sklearn.decomposition import PCA
+        >>> from sklearn.impute import SimpleImputer
+        >>> from sklearn.linear_model import LogisticRegression
+        >>> from sklearn.calibration import CalibratedClassifierCV
+        >>> from skdag.dag import DAGBuilder
+        >>> dag1 = (
+        ...     DAGBuilder()
+        ...     .add_step("impute", SimpleImputer())
+        ...     .add_step("vitals", "passthrough", deps={"impute": slice(0, 4)})
+        ...     .add_step("blood", PCA(n_components=2, random_state=0), deps={"impute": slice(4, 10)})
+        ...     .add_step("lr", LogisticRegression(random_state=0), deps=["blood", "vitals"])
+        ...     .make_dag()
+        ... )
+        >>> print(dag1)
+        o    impute
+        |\\
+        o o    blood,vitals
+        |/
+        o    lr
+        <BLANKLINE>
+        >>> dag2 = (
+        ...     DAGBuilder()
+        ...     .add_step(
+        ...         "calib",
+        ...         CalibratedClassifierCV(LogisticRegression(random_state=0), cv=5),
+        ...     )
+        ...     .make_dag()
+        ... )
+        >>> print(dag2)
+        o    calib
+        <BLANKLINE>
+        >>> dag3 = dag1.join(dag2, edges=[("blood", "calib"), ("vitals", "calib")])
+        >>> print(dag3)
+        o    impute
+        |\\
+        o o    blood,vitals
+        |x|
+        o o    calib,lr
+        <BLANKLINE>
+        """
+        if set(self.graph_.nodes) & set(other.graph_.nodes):
+            raise ValueError("DAGs with overlapping step names cannot be combined.")
+
+        newgraph = deepcopy(self.graph).copy()
+        for edge in edges:
+            if len(edge) == 2:
+                u, v, idx = *edge, None
+            else:
+                u, v, idx = edge
+
+            if u not in self.graph_:
+                raise KeyError(u)
+            if v not in other.graph_:
+                raise KeyError(v)
+
+            attrs = other.graph_.nodes[v]
+            # This also clones the estimator
+            step = attrs["step"].copy()
+
+            if u not in step.deps:
+                step.deps[u] = idx
+
+            attrs["step"] = step
+
+            newgraph.add_node(v, **attrs)
+            newgraph.add_edge(u, v)
+
+        return DAG(newgraph, **kwargs)
 
     def draw(self, filename=None, style=None, format=None, layout="dot"):
         """
