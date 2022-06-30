@@ -79,7 +79,7 @@ master_doc = "index"
 
 # General information about the project.
 project = "skdag"
-copyright = "2016, Vighnesh Birodkar"
+copyright = "2022, big-o (github)"
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -238,7 +238,7 @@ latex_documents = [
         "index",
         "project-template.tex",
         "project-template Documentation",
-        "Vighnesh Birodkar",
+        "big-o",
         "manual",
     ),
 ]
@@ -273,7 +273,7 @@ man_pages = [
         "index",
         "project-template",
         "project-template Documentation",
-        ["Vighnesh Birodkar"],
+        ["big-o"],
         1,
     )
 ]
@@ -292,7 +292,7 @@ texinfo_documents = [
         "index",
         "project-template",
         "project-template Documentation",
-        "Vighnesh Birodkar",
+        "big-o",
         "project-template",
         "One line description of project.",
         "Miscellaneous",

@@ -5,15 +5,18 @@ direction and can't go back on itself to a previously run step.
 """
 from collections import UserDict
 from copy import deepcopy
+from itertools import chain
 
 import networkx as nx
 from joblib import Parallel, delayed
 from skdag.dag._render import DAGRenderer
 from skdag.dag._utils import _is_passthrough, _is_predictor, _is_transformer, _stack
 from sklearn.base import clone
+from sklearn.exceptions import NotFittedError
 from sklearn.utils import Bunch, _print_elapsed_time, _safe_indexing
+from sklearn.utils._tags import _safe_tags
 from sklearn.utils.metaestimators import _BaseComposition, available_if
-from sklearn.utils.validation import check_memory
+from sklearn.utils.validation import check_is_fitted, check_memory
 
 __all__ = ["DAG", "DAGStep"]
 
@@ -269,6 +272,55 @@ class DAG(_BaseComposition):
     name suggests, it may not contain any cyclic dependencies and data may only flow
     from one or more start points (roots) to one or more endpoints (leaves).
 
+    Parameters
+    ----------
+
+    graph : :class:`networkx.DiGraph`
+        A directed graph with string node IDs indicating the step name. Each node must
+        have a ``step`` attribute, which contains a :class:`skdag.dag.DAGStep`.
+
+    memory : str or object with the joblib.Memory interface, default=None
+        Used to cache the fitted transformers of the DAG. By default, no caching is
+        performed. If a string is given, it is the path to the caching directory.
+        Enabling caching triggers a clone of the transformers before fitting. Therefore,
+        the transformer instance given to the DAG cannot be inspected directly. Use the
+        attribute ``named_steps`` or ``steps`` to inspect estimators within the
+        pipeline. Caching the transformers is advantageous when fitting is time
+        consuming.
+
+    n_jobs : int, default=None
+        Number of jobs to run in parallel. ``None`` means 1 unless in a
+        :obj:`joblib.parallel_backend` context.
+
+    verbose : bool, default=False
+        If True, the time elapsed while fitting each step will be printed as it is
+        completed.
+
+    Attributes
+    ----------
+
+    graph_ : :class:`networkx.DiGraph`
+        A read-only view of the workflow.
+
+    classes_ : ndarray of shape (n_classes,)
+        The classes labels. Only exists if the last step of the pipeline is a
+        classifier.
+
+    n_features_in_ : int
+        Number of features seen during :term:`fit`. Only defined if all of the
+        underlying root estimators in `graph_` expose such an attribute when fit.
+
+    feature_names_in_ : ndarray of shape (`n_features_in_`,)
+        Names of features seen during :term:`fit`. Only defined if the underlying
+        estimators expose such an attribute when fit.
+
+    See Also
+    --------
+    :class:`skdag.DAGBuilder` : Convenience utility for simplified DAG construction.
+
+    Examples
+    --------
+
     The simplest DAGs are just a chain of singular dependencies. These DAGs may be
     created from the :meth:`skdag.dag.DAG.from_pipeline` method in the same way as a
     DAG:
@@ -342,35 +394,17 @@ class DAG(_BaseComposition):
     o o    lr,rf
     <BLANKLINE>
 
-    Now our DAG will return two outputs: one from each classifier.
-    Multiple outputs are returned as a :class:`sklearn.utils.Bunch`:
+    Now our DAG will return two outputs: one from each classifier. Multiple outputs are
+    returned as a :class:`sklearn.utils.Bunch<Bunch>`:
 
-    >>> dag2.fit_predict(X, y)
+    >>> y_pred = dag2.fit_predict(X, y)
+    >>> y_pred.lr
+    array([...
+    >>> y_pred.rf
     array([...
 
-    Parameters
-    ----------
-
-    graph : networkx.DiGraph
-        A DAG of :class:`skdag.dag.DAGStep` defining the workflow.
-
-    memory : str or object with the joblib.Memory interface, default=None
-        Used to cache the fitted transformers of the DAG. By default,
-        no caching is performed. If a string is given, it is the path to
-        the caching directory. Enabling caching triggers a clone of
-        the transformers before fitting. Therefore, the transformer
-        instance given to the DAG cannot be inspected
-        directly. Use the attribute ``named_steps`` or ``steps`` to
-        inspect estimators within the DAG. Caching the
-        transformers is advantageous when fitting is time consuming.
-
-    verbose : bool, default=False
-        If True, the time elapsed while fitting each step will be printed as it
-        is completed.
-
-    n_jobs : int, default=None
-        Number of jobs to run in parallel.
-        ``None`` means 1 unless in a :obj:`joblib.parallel_backend` context.
+    Similarly, multiple inputs are also acceptable and inputs can be provided by
+    specifying ``X`` and ``y`` as a ``dict``-like object.
     """
 
     # BaseEstimator interface
@@ -1166,9 +1200,72 @@ class DAG(_BaseComposition):
         return {k: v() for k, v in renderers.items()}
 
     @property
+    def named_steps(self):
+        """
+        Access the steps by name.
+
+        Read-only attribute to access any step by given name.
+        Keys are steps names and values are the steps objects.
+        """
+        # Use Bunch object to improve autocomplete
+        return Bunch(**dict(self.steps_))
+
+    @property
     def nodes(self):
         return self.graph_.nodes
 
     @property
     def edges(self):
         return self.graph_.edges
+
+    def _get_leaf_attr(self, attr):
+        if len(self.leaves_) == 1:
+            return getattr(self.leaves_[0].estimator, attr)
+        else:
+            return Bunch(
+                **{leaf.name: getattr(leaf.estimator, attr) for leaf in self.leaves_}
+            )
+
+    @property
+    def _estimator_type(self):
+        return self._get_leaf_attr("_estimator_type")
+
+    @property
+    def classes_(self):
+        """The classes labels. Only exist if the leaf steps are classifiers."""
+        return self._get_leaf_attr("classes_")
+
+    @property
+    def n_features_in_(self):
+        """Number of features seen during first step `fit` method."""
+        return self._get_leaf_attr("n_features_in_")
+
+    @property
+    def feature_names_in_(self):
+        """Names of features seen during first step `fit` method."""
+        return self._get_leaf_attr("feature_names_in_")
+
+    def __sklearn_is_fitted__(self):
+        """Indicate whether DAG has been fit."""
+        try:
+            # check if the last steps of the DAG are fitted
+            # we only check the last steps since if the last steps are fit, it
+            # means the previous steps should also be fit. This is faster than
+            # checking if every step of the DAG is fit.
+            for leaf in self._leaves:
+                check_is_fitted(leaf.estimator)
+            return True
+        except NotFittedError:
+            return False
+
+    def _more_tags(self):
+        # check if first estimator expects pairwise input
+        if len(self.leaves_) == 1:
+            return _safe_tags(self.leaves_[0].estimator, "pairwise")
+        else:
+            return Bunch(
+                **{
+                    leaf.name: _safe_tags(leaf.estimator, "pairwise")
+                    for leaf in self.leaves_
+                }
+            )

@@ -3,11 +3,14 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to skdag's documentation!
+skdag - scikit-learn workflow management
 ============================================
 
-This project is a reference implementation to anyone who wishes to develop
-scikit-learn compatible classes.
+scikit-dag (``skdag``) is an open-sourced, MIT-licenced library that provides advanced
+workflow management to any machine learning operations that follow
+:mod:`sklearn<scikit-learn>` conventions. It does this by introducing Directed Acyclic
+Graphs (:class:`skdag.dag.DAG<DAGs>`) as a drop-in replacement for traditional scikit-learn
+:mod:`sklearn.pipeline.Pipeline<pipelines>`.
 
 .. toctree::
    :maxdepth: 2
@@ -34,19 +37,19 @@ scikit-learn compatible classes.
 `Getting started <quick_start.html>`_
 -------------------------------------
 
-Information regarding this template and how to modify it for your own project.
+A practical introduction to DAGs for scikit-learn.
 
 `User Guide <user_guide.html>`_
 -------------------------------
 
-An example of narrative documentation.
+Details of the full functionality provided by ``skdag``.
 
 `API Documentation <api.html>`_
 -------------------------------
 
-An example of API documentation.
+Detailed API documentation.
 
 `Examples <auto_examples/index.html>`_
 --------------------------------------
 
-A set of examples. It complements the `User Guide <user_guide.html>`_.
+Further examples that complement the `User Guide <user_guide.html>`_.
