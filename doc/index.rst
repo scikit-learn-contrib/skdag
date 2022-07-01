@@ -9,7 +9,7 @@ skdag - scikit-learn workflow management
 scikit-dag (``skdag``) is an open-sourced, MIT-licenced library that provides advanced
 workflow management to any machine learning operations that follow
 :mod:`sklearn<scikit-learn>` conventions. It does this by introducing Directed Acyclic
-Graphs (:class:`skdag.dag.DAG<DAGs>`) as a drop-in replacement for traditional scikit-learn
+Graphs (:class:`skdag.dag.DAG`) as a drop-in replacement for traditional scikit-learn
 :mod:`sklearn.pipeline.Pipeline<pipelines>`.
 
 .. toctree::

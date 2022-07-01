@@ -87,7 +87,7 @@ def _leaf_estimators_have(attr, how="all"):
     """Check that leaves have `attr`.
     Used together with `avaliable_if` in `DAG`."""
 
-    def check(self):
+    def check_leaves(self):
         # raises `AttributeError` with all details if `attr` does not exist
         failed = []
         for leaf in self.leaves_:
@@ -107,7 +107,7 @@ def _leaf_estimators_have(attr, how="all"):
             )
         return True
 
-    return check
+    return check_leaves
 
 
 def _parallel_fit(dag, step, Xin, Xs, y, fit_transform_fn, memory, **fit_params):
@@ -202,14 +202,18 @@ def _parallel_execute(
         fn_params = fn_params or {}
         if leaf.estimator == "passthrough":
             Xout = Xt
-        elif fit_first:
-            if hasattr(leaf.estimator, f"fit_{fn}"):
-                Xout = getattr(leaf.estimator, f"fit_{fn}")(Xt, y, **fit_params)
-            else:
-                leaf.estimator.fit(Xt, y, **fit_params)
-                Xout = getattr(leaf.estimator, fn)(Xt, **fn_params)
+        elif fit_first and hasattr(leaf.estimator, f"fit_{fn}"):
+            Xout = getattr(leaf.estimator, f"fit_{fn}")(Xt, y, **fit_params)
         else:
-            Xout = getattr(leaf.estimator, fn)(Xt, **fn_params)
+            if fit_first:
+                leaf.estimator.fit(Xt, y, **fit_params)
+
+            if y is not None:
+                Xout = getattr(leaf.estimator, fn)(Xt, y, **fn_params)
+            else:
+                # If the caller didn't assume y was provided, then don't risk making
+                # the assumption that a y param is accepted here.
+                Xout = getattr(leaf.estimator, fn)(Xt, **fn_params)
 
     fitted_estimator = leaf.estimator
     return Xout, fitted_estimator
@@ -691,7 +695,7 @@ class DAG(_BaseComposition):
 
         return self._match_input_format(X, Xout)
 
-    def _execute(self, fn, X, **fn_params):
+    def _execute(self, fn, X, y=None, **fn_params):
         Xout = {}
         fn_params_steps = self._check_fn_params(**fn_params)
         Xts = self._transform(X, **fn_params_steps)
@@ -704,6 +708,7 @@ class DAG(_BaseComposition):
                     leaf,
                     fn,
                     Xts,
+                    y,
                     fit_first=False,
                     fn_params=fn_params_steps[leaf.name],
                 )
@@ -873,6 +878,30 @@ class DAG(_BaseComposition):
         """
         return self._execute("score_samples", X)
 
+    @available_if(_leaf_estimators_have("score"))
+    def score(self, X, y=None, **score_params):
+        """Transform the data, and apply `score` with the final estimator.
+        Call `transform` of each transformer in the DAG. The transformed
+        data are finally passed to the final estimator that calls
+        `score` method. Only valid if the final estimator implements `score`.
+        Parameters
+        ----------
+        X : iterable
+            Data to predict on. Must fulfill input requirements of first step
+            of the DAG.
+        y : iterable, default=None
+            Targets used for scoring. Must fulfill label requirements for all
+            steps of the DAG.
+        sample_weight : array-like, default=None
+            If not None, this argument is passed as ``sample_weight`` keyword
+            argument to the ``score`` method of the final estimator.
+        Returns
+        -------
+        score : float
+            Result of calling `score` on the final estimator.
+        """
+        return self._execute("score", X, y, **score_params)
+
     @available_if(_leaf_estimators_have("predict_log_proba"))
     def predict_log_proba(self, X, **predict_log_proba_params):
         """Transform the data, and apply `predict_log_proba` with the final estimator.
@@ -900,6 +929,9 @@ class DAG(_BaseComposition):
             name: {} for (name, step) in self.steps_ if step is not None
         }
         for pname, pval in fit_params.items():
+            if pval is None:
+                continue
+
             if "__" not in pname:
                 raise ValueError(
                     f"DAG.fit does not accept the {pname} parameter. "
@@ -916,13 +948,17 @@ class DAG(_BaseComposition):
         global_params = {}
         fn_params_steps = {name: {} for (name, step) in self.steps_ if step is not None}
         for pname, pval in fn_params.items():
+            if pval is None:
+                continue
+
             if "__" not in pname:
                 global_params[pname] = pval
-            step, param = pname.split("__", 1)
-            fn_params_steps[step][param] = pval
+            else:
+                step, param = pname.split("__", 1)
+                fn_params_steps[step][param] = pval
 
         for step in fn_params_steps:
-            fn_params_steps.update(global_params)
+            fn_params_steps[step].update(global_params)
 
         return fn_params_steps
 
@@ -1124,7 +1160,8 @@ class DAG(_BaseComposition):
         ----------
 
         filename : str
-            The file to write the image to.
+            The file to write the image to. If None, the rendered image will be sent to
+            stdout.
         style : str, optional, choice of ['light', 'dark']
             Draw the image in light or dark mode.
         format : str, choice of ['svg', 'png', 'jpg', 'txt']
@@ -1141,6 +1178,15 @@ class DAG(_BaseComposition):
             returned. Otherwise, the output is returned as a string (for textual formats
             like ascii or svg) or bytes.
         """
+        if filename is None and format is None:
+            try:
+                from IPython import get_ipython
+                rich = type(get_ipython()).__name__ == 'ZMQInteractiveShell'
+            except NameError:
+                rich = False
+
+            format = "svg" if rich else "txt"
+
         if format is None:
             format = filename.split(".")[-1]
 
@@ -1156,9 +1202,6 @@ class DAG(_BaseComposition):
             mode = "wb" if isinstance(render, bytes) else "w"
             with open(filename, mode) as fp:
                 fp.write(render)
-
-    def __str__(self):
-        return self.draw(format="txt")
 
     def _repr_svg_(self):
         return self.draw(format="svg")

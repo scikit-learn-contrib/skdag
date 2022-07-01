@@ -1,131 +1,94 @@
 #####################################
-Quick Start with the project-template
+Quick Start with skdag
 #####################################
 
-This package serves as a skeleton package aiding at developing compatible
-scikit-learn contribution.
+The following tutorial shows you how to write some simple directed acyclic graphs (DAGs)
+with ``skdag``.
 
 Creating your own scikit-learn contribution package
 ===================================================
 
-1. Download and setup your repository
--------------------------------------
+The simplest DAGs are just a chain of singular dependencies. These DAGs may be
+created from the :meth:`skdag.dag.DAG.from_pipeline` method in the same way as a
+DAG:
 
-To create your package, you need to clone the ``project-template`` repository::
+>>> from sklearn.decomposition import PCA
+>>> from sklearn.impute import SimpleImputer
+>>> from sklearn.linear_model import LogisticRegression
+>>> dag = DAG.from_pipeline(
+...     steps=[
+...         ("impute", SimpleImputer()),
+...         ("pca", PCA()),
+...         ("lr", LogisticRegression())
+...     ]
+... )
+>>> dag.draw()
+o    impute
+|
+o    pca
+|
+o    lr
+<BLANKLINE>
 
-    $ git clone https://github.com/scikit-learn-contrib/project-template.git
+For more complex DAGs, it is recommended to use a :class:`skdag.dag.DAGBuilder`,
+which allows you to define the graph by specifying the dependencies of each new
+estimator:
 
-Before to reinitialize your git repository, you need to make the following
-changes. Replace all occurrences of ``skdag`` and ``skdag``
-with the name of you own contribution. You can find all the occurrences using
-the following command::
+>>> from skdag import DAGBuilder
+>>> dag = (
+...     DAGBuilder()
+...     .add_step("impute", SimpleImputer())
+...     .add_step("vitals", "passthrough", deps={"impute": slice(0, 4)})
+...     .add_step("blood", PCA(n_components=2, random_state=0), deps={"impute": slice(4, 10)})
+...     .add_step("lr", LogisticRegression(random_state=0), deps=["blood", "vitals"])
+...     .make_dag()
+... )
+>>> dag.draw()
+o    impute
+|\
+o o    blood,vitals
+|/
+o    lr
+<BLANKLINE>
 
-    $ git grep skdag
-    $ git grep skdag
+In the above examples we pass the first four columns directly to a regressor, but
+the remaining columns have dimensionality reduction applied first before being
+passed to the same regressor. Note that we can define our graph edges in two
+different ways: as a dict (if we need to select only certain columns from the source
+node) or as a simple list (if we want to simply grab all columns from all input
+nodes).
 
-To remove the history of the template package, you need to remove the `.git`
-directory::
+The DAG may now be used as an estimator in its own right:
 
-    $ cd project-template
-    $ rm -rf .git
+>>> from sklearn import datasets
+>>> X, y = datasets.load_diabetes(return_X_y=True)
+>>> dag.fit_predict(X, y)
+array([...
 
-Then, you need to initialize your new git repository::
+In an extension to the scikit-learn estimator interface, DAGs also support multiple
+inputs and multiple outputs. Let's say we want to compare two different classifiers:
 
-    $ git init
-    $ git add .
-    $ git commit -m 'Initial commit'
+>>> from sklearn.ensemble import RandomForestClassifier
+>>> cal = DAG.from_pipeline(
+...     [("rf", RandomForestClassifier(random_state=0))]
+... )
+>>> dag2 = dag.join(cal, edges=[("blood", "rf"), ("vitals", "rf")])
+>>> dag2.draw()
+o    impute
+|\
+o o    blood,vitals
+|x|
+o o    lr,rf
+<BLANKLINE>
 
-Finally, you create an online repository on GitHub and push your code online::
+Now our DAG will return two outputs: one from each classifier. Multiple outputs are
+returned as a :class:`sklearn.utils.Bunch<Bunch>`:
 
-    $ git remote add origin https://github.com/your_remote/your_contribution.git
-    $ git push origin master
+>>> y_pred = dag2.fit_predict(X, y)
+>>> y_pred.lr
+array([...
+>>> y_pred.rf
+array([...
 
-2. Develop your own scikit-learn estimators
--------------------------------------------
-
-.. _check_estimator: http://scikit-learn.org/stable/modules/generated/sklearn.utils.estimator_checks.check_estimator.html#sklearn.utils.estimator_checks.check_estimator
-.. _`Contributor's Guide`: http://scikit-learn.org/stable/developers/
-.. _PEP8: https://www.python.org/dev/peps/pep-0008/
-.. _PEP257: https://www.python.org/dev/peps/pep-0257/
-.. _NumPyDoc: https://github.com/numpy/numpydoc
-.. _doctests: https://docs.python.org/3/library/doctest.html
-
-You can modify the source files as you want. However, your custom estimators
-need to pass the check_estimator_ test to be scikit-learn compatible. You can
-refer to the :ref:`User Guide <user_guide>` to help you create a compatible
-scikit-learn estimator.
-
-In any case, developers should endeavor to adhere to scikit-learn's
-`Contributor's Guide`_ which promotes the use of:
-
-* algorithm-specific unit tests, in addition to ``check_estimator``'s common
-  tests;
-* PEP8_-compliant code;
-* a clearly documented API using NumpyDoc_ and PEP257_-compliant docstrings;
-* references to relevant scientific literature in standard citation formats;
-* doctests_ to provide succinct usage examples;
-* standalone examples to illustrate the usage, model visualisation, and
-  benefits/benchmarks of particular algorithms;
-* efficient code when the need for optimization is supported by benchmarks.
-
-3. Edit the documentation
--------------------------
-
-.. _Sphinx: http://www.sphinx-doc.org/en/stable/
-
-The documentation is created using Sphinx_. In addition, the examples are
-created using ``sphinx-gallery``. Therefore, to generate locally the
-documentation, you are required to install the following packages::
-
-    $ pip install sphinx sphinx-gallery sphinx_rtd_theme matplotlib numpydoc pillow
-
-The documentation is made of:
-
-* a home page, ``doc/index.rst``;
-* an API documentation, ``doc/api.rst`` in which you should add all public
-  objects for which the docstring should be exposed publicly.
-* a User Guide documentation, ``doc/user_guide.rst``, containing the narrative
-  documentation of your package, to give as much intuition as possible to your
-  users.
-* examples which are created in the `examples/` folder. Each example
-  illustrates some usage of the package. the example file name should start by
-  `plot_*.py`.
-
-The documentation is built with the following commands::
-
-    $ cd doc
-    $ make html
-
-4. Setup the continuous integration
------------------------------------
-
-The project template already contains configuration files of the continuous
-integration system. Basically, the following systems are set:
-
-* Travis CI is used to test the package in Linux. You need to activate Travis
-  CI for your own repository. Refer to the Travis CI documentation.
-* AppVeyor is used to test the package in Windows. You need to activate
-  AppVeyor for your own repository. Refer to the AppVeyor documentation.
-* Circle CI is used to check if the documentation is generated properly. You
-  need to activate Circle CI for your own repository. Refer to the Circle CI
-  documentation.
-* ReadTheDocs is used to build and host the documentation. You need to activate
-  ReadTheDocs for your own repository. Refer to the ReadTheDocs documentation.
-* CodeCov for tracking the code coverage of the package. You need to activate
-  CodeCov for you own repository.
-* PEP8Speaks for automatically checking the PEP8 compliance of your project for
-  each Pull Request.
-
-Publish your package
-====================
-
-.. _PyPi: https://packaging.python.org/tutorials/packaging-projects/
-.. _conda-foge: https://conda-forge.org/
-
-You can make your package available through PyPi_ and conda-forge_. Refer to
-the associated documentation to be able to upload your packages such that
-it will be installable with ``pip`` and ``conda``. Once published, it will
-be possible to install your package with the following commands::
-
-    $ pip install your-scikit-learn-contribution
-    $ conda install -c conda-forge your-scikit-learn-contribution
+Similarly, multiple inputs are also acceptable and inputs can be provided by
+specifying ``X`` and ``y`` as ``dict``-like objects.
