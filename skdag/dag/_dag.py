@@ -5,6 +5,7 @@ direction and can't go back on itself to a previously run step.
 """
 from collections import UserDict
 from copy import deepcopy
+from inspect import signature
 from itertools import chain
 
 import networkx as nx
@@ -208,12 +209,11 @@ def _parallel_execute(
             if fit_first:
                 leaf.estimator.fit(Xt, y, **fit_params)
 
-            if y is not None:
-                Xout = getattr(leaf.estimator, fn)(Xt, y, **fn_params)
+            est_fn = getattr(leaf.estimator, fn)
+            if "y" in signature(est_fn).parameters:
+                Xout = est_fn(Xt, y=y, **fn_params)
             else:
-                # If the caller didn't assume y was provided, then don't risk making
-                # the assumption that a y param is accepted here.
-                Xout = getattr(leaf.estimator, fn)(Xt, **fn_params)
+                Xout = est_fn(Xt, **fn_params)
 
     fitted_estimator = leaf.estimator
     return Xout, fitted_estimator
@@ -339,13 +339,12 @@ class DAG(_BaseComposition):
     ...         ("lr", LogisticRegression())
     ...     ]
     ... )
-    >>> print(dag)
+    >>> print(dag.draw().strip())
     o    impute
     |
     o    pca
     |
     o    lr
-    <BLANKLINE>
 
     For more complex DAGs, it is recommended to use a :class:`skdag.dag.DAGBuilder`,
     which allows you to define the graph by specifying the dependencies of each new
@@ -360,13 +359,12 @@ class DAG(_BaseComposition):
     ...     .add_step("lr", LogisticRegression(random_state=0), deps=["blood", "vitals"])
     ...     .make_dag()
     ... )
-    >>> print(dag)
+    >>> print(dag.draw().strip())
     o    impute
     |\\
     o o    blood,vitals
     |/
     o    lr
-    <BLANKLINE>
 
     In the above examples we pass the first four columns directly to a regressor, but
     the remaining columns have dimensionality reduction applied first before being
@@ -390,13 +388,12 @@ class DAG(_BaseComposition):
     ...     [("rf", RandomForestClassifier(random_state=0))]
     ... )
     >>> dag2 = dag.join(cal, edges=[("blood", "rf"), ("vitals", "rf")])
-    >>> print(dag2)
+    >>> print(dag2.draw().strip())
     o    impute
     |\\
     o o    blood,vitals
     |x|
     o o    lr,rf
-    <BLANKLINE>
 
     Now our DAG will return two outputs: one from each classifier. Multiple outputs are
     returned as a :class:`sklearn.utils.Bunch<Bunch>`:
@@ -451,14 +448,18 @@ class DAG(_BaseComposition):
         self.n_jobs = n_jobs
 
     def get_params(self, deep=True):
-        """Get parameters for this estimator.
+        """
+        Get parameters for this metaestimator.
+
         Returns the parameters given in the constructor as well as the
         estimators contained within the `steps_` of the `DAG`.
+
         Parameters
         ----------
         deep : bool, default=True
             If True, will return the parameters for this estimator and
             contained subobjects that are estimators.
+
         Returns
         -------
         params : mapping of string to any
@@ -466,23 +467,32 @@ class DAG(_BaseComposition):
         """
         return self._get_params("steps_", deep=deep)
 
-    def set_params(self, **kwargs):
-        """Set the parameters of this estimator.
+    def set_params(self, **params):
+        """
+        Set the parameters of this metaestimator.
+
         Valid parameter keys can be listed with ``get_params()``. Note that
         you can directly set the parameters of the estimators contained in
         `steps_`.
+
         Parameters
         ----------
-        **kwargs : dict
-            Parameters of this estimator or parameters of estimators contained
+        **params : dict
+            Parameters of this metaestimator or parameters of estimators contained
             in `steps`. Parameters of the steps may be set using its name and
             the parameter name separated by a '__'.
+
         Returns
         -------
         self : object
             DAG class instance.
         """
-        self._set_params("steps_", **kwargs)
+        step_names = set([step[0] for step in self.steps_])
+        for param in list(params.keys()):
+            if "__" not in param and param in step_names:
+                self.graph_.nodes[param]["step"].estimator = params.pop(param)
+
+        super().set_params(**params)
         return self
 
     def _log_message(self, step):
@@ -975,6 +985,10 @@ class DAG(_BaseComposition):
 
         # validate transformers
         for step in self.roots_ + self.branches_:
+            if step in self.leaves_:
+                # This will get validated later
+                continue
+
             est = step.estimator
             # Unlike pipelines we also allow predictors to be used as a transformer, to support
             # model stacking.
@@ -1003,9 +1017,9 @@ class DAG(_BaseComposition):
     @property
     def graph_(self):
         if not hasattr(self, "_graph"):
-            # Create a deep copy, then take a read-only view of it. We should not modify
+            # Read-only view of the graph. We should not modify
             # the original graph.
-            self._graph = deepcopy(self.graph).copy(as_view=True)
+            self._graph = self.graph.copy(as_view=True)
 
         return self._graph
 
@@ -1093,13 +1107,12 @@ class DAG(_BaseComposition):
         ...     .add_step("lr", LogisticRegression(random_state=0), deps=["blood", "vitals"])
         ...     .make_dag()
         ... )
-        >>> print(dag1)
+        >>> print(dag1.draw().strip())
         o    impute
         |\\
         o o    blood,vitals
         |/
         o    lr
-        <BLANKLINE>
         >>> dag2 = (
         ...     DAGBuilder()
         ...     .add_step(
@@ -1108,17 +1121,15 @@ class DAG(_BaseComposition):
         ...     )
         ...     .make_dag()
         ... )
-        >>> print(dag2)
+        >>> print(dag2.draw().strip())
         o    calib
-        <BLANKLINE>
         >>> dag3 = dag1.join(dag2, edges=[("blood", "calib"), ("vitals", "calib")])
-        >>> print(dag3)
+        >>> print(dag3.draw().strip())
         o    impute
         |\\
         o o    blood,vitals
         |x|
         o o    calib,lr
-        <BLANKLINE>
         """
         if set(self.graph_.nodes) & set(other.graph_.nodes):
             raise ValueError("DAGs with overlapping step names cannot be combined.")
@@ -1181,7 +1192,8 @@ class DAG(_BaseComposition):
         if filename is None and format is None:
             try:
                 from IPython import get_ipython
-                rich = type(get_ipython()).__name__ == 'ZMQInteractiveShell'
+
+                rich = type(get_ipython()).__name__ == "ZMQInteractiveShell"
             except NameError:
                 rich = False
 

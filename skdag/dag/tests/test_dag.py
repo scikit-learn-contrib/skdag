@@ -100,6 +100,7 @@ class FitParamT(BaseEstimator):
 
     def fit(self, X, y, should_succeed=False):
         self.successful = should_succeed
+        return self
 
     def predict(self, X):
         return self.successful
@@ -154,8 +155,7 @@ def test_dag_invalid_parameters():
     # Check that we can't fit DAGs with objects without fit
     # method
     msg = (
-        "Last step of Pipeline should implement fit "
-        "or be the string 'passthrough'"
+        "Leaf nodes of a DAG should implement fit or be the string 'passthrough'"
         ".*NoFit.*"
     )
     dag = DAG.from_pipeline([("clf", NoFit())])
@@ -188,9 +188,9 @@ def test_dag_invalid_parameters():
     # Check that we can't fit with non-transformers on the way
     # Note that NoTrans implements fit, but not transform
     msg = "All intermediate steps should be transformers.*\\bNoTrans\\b.*"
-    dag = DAG.from_pipeline([("t", NoTrans()), ("svc", clf)])
+    dag2 = DAG.from_pipeline([("t", NoTrans()), ("svc", clf)])
     with pytest.raises(TypeError, match=msg):
-        dag.fit([[1]], [1])
+        dag2.fit([[1]], [1])
 
     # Check that params are set
     dag.set_params(svc__C=0.1)
@@ -286,7 +286,6 @@ def test_dag_sample_weight_supported():
     X = np.array([[1, 2]])
     dag = DAG.from_pipeline([("transf", Transf()), ("clf", FitParamT())])
     dag.fit(X, y=None)
-    print(dag.steps_)
     assert dag.score(X) == 3
     assert dag.score(X, y=None) == 3
     assert dag.score(X, y=None, sample_weight=None) == 3
