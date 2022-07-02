@@ -315,11 +315,7 @@ def test_dag_raise_set_params_error():
         r"\)\. Valid parameters are: \['graph', 'memory', 'n_jobs', 'verbose'\]."
     )
     with pytest.raises(ValueError, match=error_msg):
-        try:
-            dag.set_params(fake="nope")
-        except ValueError as err:
-            print(err)
-            raise
+        dag.set_params(fake="nope")
 
     # invalid outer parameter name for compound parameter: the expected error message
     # is the same as above.
