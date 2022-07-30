@@ -156,7 +156,7 @@ the next step(s).
     ...     .add_step("meta", LinearRegression(), deps=["knn", "svr"])
     ...     .make_dag()
     ... )
-    >>> stack.fit(X, y)
+    >>> stack.fit(X_train, y_train)
 
 .. image:: _static/img/stack.svg
 
@@ -167,11 +167,11 @@ As we can now see, the stacking ensemble method gives us a boost in performance:
 
 .. code-block:: python
 
-    >>> stack.score(X, y)
+    >>> stack.score(X_test, y_test)
     0.145...
-    >>> knn.score(X, y)
+    >>> knn.score(X_test, y_test)
     0.138...
-    >>> svr.score(X, y)
+    >>> svr.score(X_test, y_test)
     0.128...
 
 Stacking works best when a diverse range of algorithms are used to provide predictions,
