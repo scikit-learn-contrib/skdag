@@ -138,18 +138,22 @@ the next step(s).
 .. code-block:: python
 
     >>> from sklearn import datasets
-    >>> from sklearn.ensemble import RandomForestRegressor
     >>> from sklearn.linear_model import LinearRegression
+    >>> from sklearn.model_selection import train_test_split
+    >>> from sklearn.neighbors import KNeighborsRegressor
     >>> from sklearn.svm import SVR
     >>> X, y = datasets.load_diabetes(return_X_y=True)
-    >>> rf = RandomForestRegressor(max_depth=6, random_state=0)
+    >>> X_train, X_test, y_train, y_test = train_test_split(
+    ...     X, y, test_size=0.2, random_state=0
+    ... )
+    >>> knn = KNeighborsRegressor(3)
     >>> svr = SVR(C=1.0)
     >>> stack = (
     ...     DAGBuilder()
     ...     .add_step("pass", "passthrough")
-    ...     .add_step("rf", rf, deps=["pass"])
+    ...     .add_step("knn", knn, deps=["pass"])
     ...     .add_step("svr", svr, deps=["pass"])
-    ...     .add_step("meta", LinearRegression(), deps=["rf", "svr"])
+    ...     .add_step("meta", LinearRegression(), deps=["knn", "svr"])
     ...     .make_dag()
     ... )
     >>> stack.fit(X, y)
@@ -164,11 +168,11 @@ As we can now see, the stacking ensemble method gives us a boost in performance:
 .. code-block:: python
 
     >>> stack.score(X, y)
-    0.832...
-    >>> rf.score(X, y)
-    0.775...
+    0.145...
+    >>> knn.score(X, y)
+    0.138...
     >>> svr.score(X, y)
-    0.207...
+    0.128...
 
 Stacking works best when a diverse range of algorithms are used to provide predictions,
 which are then fed into a very simple meta-estimator. To minimize overfitting,
