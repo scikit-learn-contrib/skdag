@@ -1,5 +1,5 @@
 #! /usr/bin/env python
-"""A more flexible alternative to scikit-learn Pipelines"""
+"""A flexible alternative to scikit-learn Pipelines"""
 
 import codecs
 import os
@@ -26,7 +26,7 @@ with open(ver_file) as f:
     exec(f.read())
 
 DISTNAME = "skdag"
-DESCRIPTION = "A more flexible alternative to scikit-learn Pipelines"
+DESCRIPTION = "A flexible alternative to scikit-learn Pipelines"
 
 with codecs.open("README.rst", encoding="utf-8") as f:
     LONG_DESCRIPTION = f.read()
@@ -49,10 +49,9 @@ CLASSIFIERS = [
     "Operating System :: POSIX",
     "Operating System :: Unix",
     "Operating System :: MacOS",
-    "Programming Language :: Python :: 2.7",
-    "Programming Language :: Python :: 3.5",
-    "Programming Language :: Python :: 3.6",
     "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
 ]
 EXTRAS_REQUIRE = {
     "tests": ["pytest", "pytest-cov"],

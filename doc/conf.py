@@ -72,7 +72,7 @@ source_suffix = ".rst"
 # source_encoding = 'utf-8-sig'
 
 # Generate the plots for the gallery
-plot_gallery = True
+plot_gallery = False
 
 # The master toctree document.
 master_doc = "index"
@@ -332,4 +332,4 @@ sphinx_gallery_conf = {
 
 def setup(app):
     # a copy button to copy snippet of code from the documentation
-    app.add_javascript("js/copybutton.js")
+    app.add_js_file("js/copybutton.js")

@@ -30,6 +30,8 @@ o    pca
 o    lr
 <BLANKLINE>
 
+.. image:: _static/img/dag1.svg
+
 For more complex DAGs, it is recommended to use a :class:`skdag.dag.DAGBuilder`,
 which allows you to define the graph by specifying the dependencies of each new
 estimator:
@@ -51,12 +53,14 @@ o o    blood,vitals
 o    lr
 <BLANKLINE>
 
+.. image:: _static/img/dag2.svg
+
 In the above examples we pass the first four columns directly to a regressor, but
 the remaining columns have dimensionality reduction applied first before being
-passed to the same regressor. Note that we can define our graph edges in two
-different ways: as a dict (if we need to select only certain columns from the source
-node) or as a simple list (if we want to simply grab all columns from all input
-nodes).
+passed to the same regressor as extra input columns. Note that we can define our graph
+edges in two different ways: as a dict (if we need to select only certain columns from
+the source node) or as a simple list (if we want to simply grab all columns from all
+input nodes).
 
 The DAG may now be used as an estimator in its own right:
 
@@ -80,6 +84,8 @@ o o    blood,vitals
 |x|
 o o    lr,rf
 <BLANKLINE>
+
+.. image:: _static/img/dag3.svg
 
 Now our DAG will return two outputs: one from each classifier. Multiple outputs are
 returned as a :class:`sklearn.utils.Bunch<Bunch>`:

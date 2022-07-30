@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="279pt" height="98pt" viewBox="0.00 0.00 279.00 98.00">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 94)">
+<polygon fill="white" stroke="transparent" points="-4,4 -4,-94 275,-94 275,4 -4,4"/>
+<!-- impute -->
+<g id="node1" class="node">
+<title>impute</title>
+<g id="a_node1"><a xlink:title="SimpleImputer()">
+<polygon fill="none" stroke="black" points="65,-63 0,-63 0,-27 65,-27 65,-63"/>
+<text text-anchor="middle" x="32.5" y="-41.3" font-family="SANS" font-size="14.00">impute</text>
+</a>
+</g>
+</g>
+<!-- vitals -->
+<g id="node2" class="node">
+<title>vitals</title>
+<g id="a_node2"><a xlink:title="'passthrough'">
+<polygon fill="none" stroke="black" points="181,-72 161,-90 121,-90 101,-72 121,-54 161,-54 181,-72"/>
+<text text-anchor="middle" x="141" y="-68.3" font-family="SANS" font-size="14.00">vitals</text>
+</a>
+</g>
+</g>
+<!-- impute&#45;&gt;vitals -->
+<g id="edge1" class="edge">
+<title>impute-&gt;vitals</title>
+<path fill="none" stroke="black" d="M65.17,-53.03C75.98,-55.77 88.22,-58.87 99.62,-61.76"/>
+<polygon fill="black" stroke="black" points="98.82,-65.17 109.37,-64.24 100.54,-58.38 98.82,-65.17"/>
+</g>
+<!-- blood -->
+<g id="node3" class="node">
+<title>blood</title>
+<g id="a_node3"><a xlink:title="PCA(n_components=2, random_state=0)">
+<polygon fill="none" stroke="black" points="168.5,-36 113.5,-36 113.5,0 168.5,0 168.5,-36"/>
+<text text-anchor="middle" x="141" y="-14.3" font-family="SANS" font-size="14.00">blood</text>
+</a>
+</g>
+</g>
+<!-- impute&#45;&gt;blood -->
+<g id="edge2" class="edge">
+<title>impute-&gt;blood</title>
+<path fill="none" stroke="black" d="M65.17,-36.97C77.14,-33.94 90.87,-30.46 103.27,-27.31"/>
+<polygon fill="black" stroke="black" points="104.48,-30.62 113.31,-24.77 102.76,-23.83 104.48,-30.62"/>
+</g>
+<!-- lr -->
+<g id="node4" class="node">
+<title>lr</title>
+<g id="a_node4"><a xlink:title="LogisticRegression(random_state=0)">
+<ellipse fill="none" stroke="black" cx="244" cy="-72" rx="27" ry="18"/>
+<text text-anchor="middle" x="244" y="-68.3" font-family="SANS" font-size="14.00">lr</text>
+</a>
+</g>
+</g>
+<!-- vitals&#45;&gt;lr -->
+<g id="edge3" class="edge">
+<title>vitals-&gt;lr</title>
+<path fill="none" stroke="black" d="M181.05,-72C189.48,-72 198.36,-72 206.68,-72"/>
+<polygon fill="black" stroke="black" points="206.85,-75.5 216.85,-72 206.85,-68.5 206.85,-75.5"/>
+</g>
+<!-- rf -->
+<g id="node5" class="node">
+<title>rf</title>
+<g id="a_node5"><a xlink:title="RandomForestClassifier(random_state=0)">
+<ellipse fill="none" stroke="black" cx="244" cy="-18" rx="27" ry="18"/>
+<text text-anchor="middle" x="244" y="-14.3" font-family="SANS" font-size="14.00">rf</text>
+</a>
+</g>
+</g>
+<!-- vitals&#45;&gt;rf -->
+<g id="edge4" class="edge">
+<title>vitals-&gt;rf</title>
+<path fill="none" stroke="black" d="M166.71,-58.79C180.7,-51.31 198.29,-41.9 213.06,-34.01"/>
+<polygon fill="black" stroke="black" points="215.12,-36.87 222.29,-29.07 211.82,-30.7 215.12,-36.87"/>
+</g>
+<!-- blood&#45;&gt;lr -->
+<g id="edge5" class="edge">
+<title>blood-&gt;lr</title>
+<path fill="none" stroke="black" d="M168.54,-32.19C182.34,-39.57 199.26,-48.62 213.48,-56.22"/>
+<polygon fill="black" stroke="black" points="211.91,-59.35 222.38,-60.97 215.21,-53.17 211.91,-59.35"/>
+</g>
+<!-- blood&#45;&gt;rf -->
+<g id="edge6" class="edge">
+<title>blood-&gt;rf</title>
+<path fill="none" stroke="black" d="M168.54,-18C180.23,-18 194.15,-18 206.77,-18"/>
+<polygon fill="black" stroke="black" points="206.99,-21.5 216.99,-18 206.99,-14.5 206.99,-21.5"/>
+</g>
+</g>
+</svg>

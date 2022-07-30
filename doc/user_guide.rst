@@ -2,179 +2,174 @@
 
 .. _user_guide:
 
-==================================================
-User guide: create your own scikit-learn DAG
-==================================================
+########################
+Composing Estimator DAGs
+########################
 
-Estimator
----------
+The following tutorial shows you how to write some simple directed acyclic graphs (DAGs)
+with ``skdag``.
 
-The central piece of transformer, regressor, and classifier is
-:class:`sklearn.base.BaseEstimator`. All estimators in scikit-learn are derived
-from this class. In more details, this base class enables to set and get
-parameters of the estimator. It can be imported as::
+Creating your first DAG
+=======================
 
-    >>> from sklearn.base import BaseEstimator
+The simplest DAGs are just a chain of singular dependencies, which is equivalent to a
+scikit-learn :class:`~sklearn.pipeline.Pipeline`. These DAGs may be created from the
+:meth:`~skdag.DAG.dag._dag.from_pipeline` method in the same way as a DAG:
 
-Once imported, you can create a class which inherate from this base class::
+.. code-block:: python
 
-    >>> class MyOwnEstimator(BaseEstimator):
-    ...     pass
-
-Transformer
------------
-
-Transformers are scikit-learn estimators which implement a ``transform`` method.
-The use case is the following:
-
-* at ``fit``, some parameters can be learned from ``X`` and ``y``;
-* at ``transform``, `X` will be transformed, using the parameters learned
-  during ``fit``.
-
-.. _mixin: https://en.wikipedia.org/wiki/Mixin
-
-In addition, scikit-learn provides a
-mixin_, i.e. :class:`sklearn.base.TransformerMixin`, which
-implement the combination of ``fit`` and ``transform`` called ``fit_transform``::
-
-One can import the mixin class as::
-
-    >>> from sklearn.base import TransformerMixin
-
-Therefore, when creating a transformer, you need to create a class which
-inherits from both :class:`sklearn.base.BaseEstimator` and
-:class:`sklearn.base.TransformerMixin`. The scikit-learn API imposed ``fit`` to
-**return ``self``**. The reason is that it allows to pipeline ``fit`` and
-``transform`` imposed by the :class:`sklearn.base.TransformerMixin`. The
-``fit`` method is expected to have ``X`` and ``y`` as inputs. Note that
-``transform`` takes only ``X`` as input and is expected to return the
-transformed version of ``X``::
-
-    >>> class MyOwnTransformer(BaseEstimator, TransformerMixin):
-    ...     def fit(self, X, y=None):
-    ...         return self
-    ...     def transform(self, X):
-    ...         return X
-
-We build a basic example to show that our :class:`MyOwnTransformer` is working
-within a scikit-learn ``pipeline``::
-
-    >>> from sklearn.datasets import load_iris
-    >>> from sklearn.pipeline import make_pipeline
+    >>> from sklearn.decomposition import PCA
+    >>> from sklearn.impute import SimpleImputer
     >>> from sklearn.linear_model import LogisticRegression
-    >>> X, y = load_iris(return_X_y=True)
-    >>> pipe = make_pipeline(MyOwnTransformer(),
-    ...                      LogisticRegression(random_state=10,
-    ...                                         solver='lbfgs'))
-    >>> pipe.fit(X, y)  # doctest: +ELLIPSIS
-    Pipeline(...)
-    >>> pipe.predict(X)  # doctest: +ELLIPSIS
-    array([...])
+    >>> dag = DAG.from_pipeline(
+    ...     steps=[
+    ...         ("impute", SimpleImputer()),
+    ...         ("pca", PCA()),
+    ...         ("lr", LogisticRegression())
+    ...     ]
+    ... )
 
-Predictor
----------
+You may view a diagram of the DAG with the :meth:`~skdag.dag.DAG.show` method. In a
+notbook environment this will display an image, whereas in a terminal it will generate
+ASCII text:
 
-Regressor
-~~~~~~~~~
+.. code-block:: python
 
-Similarly, regressors are scikit-learn estimators which implement a ``predict``
-method. The use case is the following:
+    >>> dag.show()
+    o    impute
+    |
+    o    pca
+    |
+    o    lr
 
-* at ``fit``, some parameters can be learned from ``X`` and ``y``;
-* at ``predict``, predictions will be computed using ``X`` using the parameters
-  learned during ``fit``.
+.. image:: _static/img/dag1.svg
 
-In addition, scikit-learn provides a mixin_, i.e.
-:class:`sklearn.base.RegressorMixin`, which implements the ``score`` method
-which computes the :math:`R^2` score of the predictions.
+For more complex DAGs, it is recommended to use a :class:`skdag.dag.DAGBuilder`,
+which allows you to define the graph by specifying the dependencies of each new
+estimator:
 
-One can import the mixin as::
+.. code-block:: python
 
-    >>> from sklearn.base import RegressorMixin
+    >>> from skdag import DAGBuilder
+    >>> dag = (
+    ...     DAGBuilder()
+    ...     .add_step("impute", SimpleImputer())
+    ...     .add_step("vitals", "passthrough", deps={"impute": slice(0, 4)})
+    ...     .add_step("blood", PCA(n_components=2, random_state=0), deps={"impute": slice(4, 10)})
+    ...     .add_step("lr", LogisticRegression(random_state=0), deps=["blood", "vitals"])
+    ...     .make_dag()
+    ... )
+    >>> dag.show()
+    o    impute
+    |\
+    o o    blood,vitals
+    |/
+    o    lr
 
-Therefore, we create a regressor, :class:`MyOwnRegressor` which inherits from
-both :class:`sklearn.base.BaseEstimator` and
-:class:`sklearn.base.RegressorMixin`. The method ``fit`` gets ``X`` and ``y``
-as input and should return ``self``. It should implement the ``predict``
-function which should output the predictions of your regressor::
+.. image:: _static/img/dag2.svg
 
-    >>> import numpy as np
-    >>> class MyOwnRegressor(BaseEstimator, RegressorMixin):
-    ...     def fit(self, X, y):
-    ...         return self
-    ...     def predict(self, X):
-    ...         return np.mean(X, axis=1)
+In the above examples we pass the first four columns directly to a regressor, but
+the remaining columns have dimensionality reduction applied first before being
+passed to the same regressor. Note that we can define our graph edges in two
+different ways: as a dict (if we need to select only certain columns from the source
+node) or as a simple list (if we want to simply grab all columns from all input
+nodes).
 
-We illustrate that this regressor is working within a scikit-learn pipeline::
+The DAG may now be used as an estimator in its own right:
 
-    >>> from sklearn.datasets import load_diabetes
-    >>> X, y = load_diabetes(return_X_y=True)
-    >>> pipe = make_pipeline(MyOwnTransformer(), MyOwnRegressor())
-    >>> pipe.fit(X, y)  # doctest: +ELLIPSIS
-    Pipeline(...)
-    >>> pipe.predict(X)  # doctest: +ELLIPSIS
-    array([...])
+.. code-block:: python
 
-Since we inherit from the :class:`sklearn.base.RegressorMixin`, we can call
-the ``score`` method which will return the :math:`R^2` score::
+    >>> from sklearn import datasets
+    >>> X, y = datasets.load_diabetes(return_X_y=True)
+    >>> dag.fit_predict(X, y)
+    array([...
 
-    >>> pipe.score(X, y)  # doctest: +ELLIPSIS
-    -3.9...
+In an extension to the scikit-learn estimator interface, DAGs also support multiple
+inputs and multiple outputs. Let's say we want to compare two different classifiers:
 
-Classifier
-~~~~~~~~~~
+.. code-block:: python
 
-Similarly to regressors, classifiers implement ``predict``. In addition, they
-output the probabilities of the prediction using the ``predict_proba`` method:
+    >>> from sklearn.ensemble import RandomForestClassifier
+    >>> rf = DAG.from_pipeline(
+    ...     [("rf", RandomForestClassifier(random_state=0))]
+    ... )
+    >>> dag2 = dag.join(rf, edges=[("blood", "rf"), ("vitals", "rf")])
+    >>> dag2.show()
+    o    impute
+    |\
+    o o    blood,vitals
+    |x|
+    o o    lr,rf
 
-* at ``fit``, some parameters can be learned from ``X`` and ``y``;
-* at ``predict``, predictions will be computed using ``X`` using the parameters
-  learned during ``fit``. The output corresponds to the predicted class for each sample;
-* ``predict_proba`` will give a 2D matrix where each column corresponds to the
-  class and each entry will be the probability of the associated class.
+.. image:: _static/img/dag3.svg
 
-In addition, scikit-learn provides a mixin, i.e.
-:class:`sklearn.base.ClassifierMixin`, which implements the ``score`` method
-which computes the accuracy score of the predictions.
+Now our DAG will return two outputs: one from each classifier. Multiple outputs are
+returned as a :class:`sklearn.utils.Bunch<Bunch>`:
 
-One can import this mixin as::
+.. code-block:: python
 
-    >>> from sklearn.base import ClassifierMixin
+    >>> y_pred = dag2.fit_predict(X, y)
+    >>> y_pred.lr
+    array([...
+    >>> y_pred.rf
+    array([...
 
-Therefore, we create a classifier, :class:`MyOwnClassifier` which inherits
-from both :class:`slearn.base.BaseEstimator` and
-:class:`sklearn.base.ClassifierMixin`. The method ``fit`` gets ``X`` and ``y``
-as input and should return ``self``. It should implement the ``predict``
-function which should output the class inferred by the classifier.
-``predict_proba`` will output some probabilities instead::
+Similarly, multiple inputs are also acceptable and inputs can be provided by
+specifying ``X`` and ``y`` as ``dict``-like objects.
 
-    >>> class MyOwnClassifier(BaseEstimator, ClassifierMixin):
-    ...     def fit(self, X, y):
-    ...         self.classes_ = np.unique(y)
-    ...         return self
-    ...     def predict(self, X):
-    ...         return np.random.randint(0, self.classes_.size,
-    ...                                  size=X.shape[0])
-    ...     def predict_proba(self, X):
-    ...         pred = np.random.rand(X.shape[0], self.classes_.size)
-    ...         return pred / np.sum(pred, axis=1)[:, np.newaxis]
+########
+Stacking
+########
 
-We illustrate that this regressor is working within a scikit-learn pipeline::
+Unlike Pipelines, DAGs do not require only the final step to be an estimator. This
+allows DAGs to be used for model stacking.
 
-    >>> X, y = load_iris(return_X_y=True)
-    >>> pipe = make_pipeline(MyOwnTransformer(), MyOwnClassifier())
-    >>> pipe.fit(X, y)  # doctest: +ELLIPSIS
-    Pipeline(...)
+Stacking is an ensemble method, like bagging or boosting, that allows multiple models
+to be combined into a single, more robust estimator. In stacking, predictions from
+multiple models are passed to a final `meta-estimator`; a simple model that combines the
+previous predictions into a final output. Like other ensemble methods, stacking can help
+to improve the performance and robustness of individual models.
 
-Then, you can call ``predict`` and ``predict_proba``::
+``skdag`` implements stacking in a simple way. If an estimator without a ``transform()``
+method is placed in a non-leaf step of the DAG, then the output of
+:meth:`predict_proba`, :meth:`decision_function` or :meth:`predict` will be passed to
+the next step(s).
 
-    >>> pipe.predict(X)  # doctest: +ELLIPSIS
-    array([...])
-    >>> pipe.predict_proba(X)  # doctest: +ELLIPSIS
-    array([...])
+.. code-block:: python
 
-Since our classifier inherits from :class:`sklearn.base.ClassifierMixin`, we
-can compute the accuracy by calling the ``score`` method::
+    >>> from sklearn import datasets
+    >>> from sklearn.ensemble import RandomForestRegressor
+    >>> from sklearn.linear_model import LinearRegression
+    >>> from sklearn.svm import SVR
+    >>> X, y = datasets.load_diabetes(return_X_y=True)
+    >>> rf = RandomForestRegressor(max_depth=6, random_state=0)
+    >>> svr = SVR(C=1.0)
+    >>> stack = (
+    ...     DAGBuilder()
+    ...     .add_step("pass", "passthrough")
+    ...     .add_step("rf", rf, deps=["pass"])
+    ...     .add_step("svr", svr, deps=["pass"])
+    ...     .add_step("meta", LinearRegression(), deps=["rf", "svr"])
+    ...     .make_dag()
+    ... )
+    >>> stack.fit(X, y)
 
-    >>> pipe.score(X, y)  # doctest: +ELLIPSIS
-    0...
+.. image:: _static/img/stack.svg
+
+Note that the passthrough is not strictly necessary but it is convenient as it ensures
+the stack has a single entry point, which makes it simpler to use.
+
+As we can now see, the stacking ensemble method gives us a boost in performance:
+
+.. code-block:: python
+
+    >>> stack.score(X, y)
+    0.832...
+    >>> rf.score(X, y)
+    0.775...
+    >>> svr.score(X, y)
+    0.207...
+
+Stacking works best when a diverse range of algorithms are used to provide predictions,
+which are then fed into a very simple meta-estimator. To minimize overfitting,
+cross-validation should be considered when using stacking.

@@ -1,3 +1,5 @@
+import black
+import html
 import networkx as nx
 import stackeddag.core as sd
 from skdag.dag._utils import _is_passthrough
@@ -22,12 +24,12 @@ class DAGRenderer:
         },
     }
 
-    def __init__(self, dag, style=None):
+    def __init__(self, dag, detailed=False, style=None):
         self.dag = dag
         if style is not None and style not in self._STYLES:
             raise ValueError(f"Unknown style: '{style}'.")
         self.style = style
-        self.agraph = self.to_agraph()
+        self.agraph = self.to_agraph(detailed)
 
     def _get_node_shape(self, estimator):
         if _is_passthrough(estimator):
@@ -39,7 +41,7 @@ class DAGRenderer:
     def _is_empty(self):
         return len(self.dag) == 0
 
-    def to_agraph(self):
+    def to_agraph(self, detailed):
         G = self.dag
         if self._is_empty():
             G = nx.DiGraph()
@@ -59,10 +61,13 @@ class DAGRenderer:
                 }
             )
 
+        mode = black.FileMode()
+        mode.line_length = 16
+
         for v in G.nodes:
             anode = A.get_node(v)
             gnode = G.nodes[v]
-            anode.attr["fontname"] = gnode.get("fontname", "sans")
+            anode.attr["fontname"] = gnode.get("fontname", "SANS")
             if self.style is not None:
                 anode.attr.update(
                     {
@@ -72,8 +77,23 @@ class DAGRenderer:
                     }
                 )
             if "step" in gnode:
+                estimator = gnode["step"].estimator
+                anode.attr["tooltip"] = repr(estimator)
+
+                if detailed:
+                    estimator_str = html.escape(
+                        black.format_str(repr(estimator), mode=mode)
+                    ).replace("\n", '<BR ALIGN="LEFT"/>')
+
+                    anode.attr["label"] = (
+                        '<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">'
+                        f'<TR><TD ALIGN="CENTER">{v}</TD></TR>'
+                        f'<TR><TD ALIGN="LEFT"><FONT FACE="MONOSPACE" POINT-SIZE="6">{estimator_str}</FONT></TD></TR>'
+                        "</TABLE>>"
+                    )
+
                 anode.attr["shape"] = gnode.get(
-                    "shape", self._get_node_shape(gnode["step"].estimator)
+                    "shape", self._get_node_shape(estimator)
                 )
                 if gnode["step"].is_fitted:
                     anode.attr["peripheries"] = 2
@@ -101,7 +121,7 @@ class DAGRenderer:
 
             # Edge case: single node, no edges.
             if len(A.edges()) == 0:
-                return f"o    {next(A.nodes_iter())}\n"
+                return f"o    {next(A.nodes_iter())}"
 
             la = []
             for node in A.nodes():
@@ -111,7 +131,7 @@ class DAGRenderer:
             for src, dst in A.edges():
                 ed.append((src, [dst]))
 
-            return sd.edgesToText(sd.mkLabels(la), sd.mkEdges(ed))
+            return sd.edgesToText(sd.mkLabels(la), sd.mkEdges(ed)).strip()
 
         data = A.draw(format=format, prog=layout)
 

@@ -1,8 +1,8 @@
-####################
-project-template API
-####################
+#########
+skdag API
+#########
 
-This is an example on how to document the API of your own project.
+See below for detailed descriptions of the ``skdag`` interface.
 
 .. currentmodule:: skdag
 
@@ -13,22 +13,22 @@ Estimator
    :toctree: generated/
    :template: class.rst
 
-   TemplateEstimator
+   DAG
 
-Transformer
-===========
+Exceptions
+==========
 
 .. autosummary::
    :toctree: generated/
    :template: class.rst
 
-   TemplateTransformer
+   exceptions.DAGError
 
-Predictor
+Utilities
 =========
 
 .. autosummary::
    :toctree: generated/
    :template: class.rst
 
-    TemplateClassifier
+   DAGBuilder

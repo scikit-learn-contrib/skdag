@@ -11,7 +11,13 @@ from itertools import chain
 import networkx as nx
 from joblib import Parallel, delayed
 from skdag.dag._render import DAGRenderer
-from skdag.dag._utils import _is_passthrough, _is_predictor, _is_transformer, _stack
+from skdag.dag._utils import (
+    _in_notebook,
+    _is_passthrough,
+    _is_predictor,
+    _is_transformer,
+    _stack,
+)
 from sklearn.base import clone
 from sklearn.exceptions import NotFittedError
 from sklearn.utils import Bunch, _print_elapsed_time, _safe_indexing
@@ -25,10 +31,17 @@ __all__ = ["DAG", "DAGStep"]
 def _transform_one(transformer, X, weight, allow_predictor=True, **fit_params):
     if _is_passthrough(transformer):
         res = X
-    elif allow_predictor and hasattr(transformer, "predict"):
-        res = transformer.predict(X)
-        if res.ndim < 2:
-            res = res.reshape(-1, 1)
+    elif allow_predictor and not hasattr(transformer, "transform"):
+        for fn in ["predict_proba", "decision_function", "predict"]:
+            if hasattr(transformer, fn):
+                res = getattr(transformer, fn)(X)
+                if res.ndim < 2:
+                    res = res.reshape(-1, 1)
+                break
+        else:
+            raise AttributeError(
+                f"'{type(transformer).__name__}' object has no attribute 'transform'"
+            )
     else:
         res = transformer.transform(X)
     # if we have a weight for this transformer, multiply output
@@ -249,8 +262,6 @@ class DAGStep:
         self.is_leaf = False
         self.is_fitted = False
 
-        self._hashval = hash((type(self).__name__, self.name))
-
     def copy(self):
         return self.__class__(
             name=self.name,
@@ -261,9 +272,6 @@ class DAGStep:
 
     def __repr__(self):
         return f"{type(self).__name__}({repr(self.name)}, {repr(self.estimator)})"
-
-    def __hash__(self):
-        return self._hashval
 
 
 class DAG(_BaseComposition):
@@ -413,15 +421,30 @@ class DAG(_BaseComposition):
 
     @classmethod
     def from_pipeline(cls, steps, **kwargs):
+        """
+        Construct a DAG from a simple linear sequence of steps. The resulting DAG will
+        be equivalent to a :class:`~sklearn.pipeline.Pipeline`.
+
+        Parameters
+        ----------
+
+        steps : sequence of (str, estimator)
+            An ordered sequence of pipeline steps. A step is simply a pair of
+            ``(name, estimator)``, just like a scikit-learn Pipeline.
+
+        kwargs : kwargs
+            Any other hyperparameters that are accepted by :class:`~skdag.dag.DAG`'s
+            contructor.
+        """
         graph = nx.DiGraph()
         if hasattr(steps, "steps"):
-            DAG = steps
-            steps = DAG.steps
-            if hasattr(DAG, "get_params"):
+            pipe = steps
+            steps = pipe.steps
+            if hasattr(pipe, "get_params"):
                 kwargs = {
                     **{
                         k: v
-                        for k, v in DAG.get_params().items()
+                        for k, v in pipe.get_params().items()
                         if k in ("memory", "verbose")
                     },
                     **kwargs,
@@ -639,9 +662,12 @@ class DAG(_BaseComposition):
         return Bunch(**Xout)
 
     def fit(self, X, y=None, **fit_params):
-        """Fit the model.
+        """
+        Fit the model.
+
         Fit all the transformers one after the other and transform the
-        data. Finally, fit the transformed data using the final estimator.
+        data. Finally, fit the transformed data using the final estimators.
+
         Parameters
         ----------
         X : iterable
@@ -654,6 +680,7 @@ class DAG(_BaseComposition):
             Parameters passed to the ``fit`` method of each step, where
             each parameter name is prefixed such that parameter ``p`` for step
             ``s`` has key ``s__p``.
+
         Returns
         -------
         self : object
@@ -732,10 +759,13 @@ class DAG(_BaseComposition):
 
     @available_if(_leaf_estimators_have("transform"))
     def fit_transform(self, X, y=None, **fit_params):
-        """Fit the model and transform with the final estimator.
+        """
+        Fit the model and transform with the final estimator.
+
         Fits all the transformers one after the other and transform the
         data. Then uses `fit_transform` on transformed data with the final
         estimator.
+
         Parameters
         ----------
         X : iterable
@@ -748,6 +778,7 @@ class DAG(_BaseComposition):
             Parameters passed to the ``fit`` method of each step, where
             each parameter name is prefixed such that parameter ``p`` for step
             ``s`` has key ``s__p``.
+
         Returns
         -------
         Xt : ndarray of shape (n_samples, n_transformed_features)
@@ -757,18 +788,23 @@ class DAG(_BaseComposition):
 
     @available_if(_leaf_estimators_have("transform"))
     def transform(self, X):
-        """Transform the data, and apply `transform` with the final estimator.
+        """
+        Transform the data, and apply `transform` with the final estimator.
+
         Call `transform` of each transformer in the DAG. The transformed
         data are finally passed to the final estimator that calls
         `transform` method. Only valid if the final estimator
         implements `transform`.
+
         This also works where final estimator is `None` in which case all prior
         transformations are applied.
+
         Parameters
         ----------
         X : iterable
             Data to transform. Must fulfill input requirements of first step
             of the DAG.
+
         Returns
         -------
         Xt : ndarray of shape (n_samples, n_transformed_features)
@@ -778,11 +814,13 @@ class DAG(_BaseComposition):
 
     @available_if(_leaf_estimators_have("predict"))
     def fit_predict(self, X, y=None, **fit_params):
-        """Transform the data, and apply `fit_predict` with the final estimator.
-        Call `fit_transform` of each transformer in the DAG. The
-        transformed data are finally passed to the final estimator that calls
-        `fit_predict` method. Only valid if the final estimator implements
-        `fit_predict`.
+        """
+        Transform the data, and apply `fit_predict` with the final estimator.
+
+        Call `fit_transform` of each transformer in the DAG. The transformed data are
+        finally passed to the final estimator that calls `fit_predict` method. Only
+        valid if the final estimators implement `fit_predict`.
+
         Parameters
         ----------
         X : iterable
@@ -795,6 +833,7 @@ class DAG(_BaseComposition):
             Parameters passed to the ``fit`` method of each step, where
             each parameter name is prefixed such that parameter ``p`` for step
             ``s`` has key ``s__p``.
+
         Returns
         -------
         y_pred : ndarray
@@ -804,10 +843,13 @@ class DAG(_BaseComposition):
 
     @available_if(_leaf_estimators_have("predict"))
     def predict(self, X, **predict_params):
-        """Transform the data, and apply `predict` with the final estimator.
+        """
+        Transform the data, and apply `predict` with the final estimator.
+
         Call `transform` of each transformer in the DAG. The transformed
         data are finally passed to the final estimator that calls `predict`
-        method. Only valid if the final estimator implements `predict`.
+        method. Only valid if the final estimators implement `predict`.
+
         Parameters
         ----------
         X : iterable
@@ -820,7 +862,7 @@ class DAG(_BaseComposition):
             or return_cov, uncertainties that are generated by the
             transformations in the DAG are not propagated to the
             final estimator.
-            .. versionadded:: 0.20
+
         Returns
         -------
         y_pred : ndarray
@@ -830,11 +872,14 @@ class DAG(_BaseComposition):
 
     @available_if(_leaf_estimators_have("predict_proba"))
     def predict_proba(self, X, **predict_proba_params):
-        """Transform the data, and apply `predict_proba` with the final estimator.
+        """
+        Transform the data, and apply `predict_proba` with the final estimator.
+
         Call `transform` of each transformer in the DAG. The transformed
         data are finally passed to the final estimator that calls
-        `predict_proba` method. Only valid if the final estimator implements
+        `predict_proba` method. Only valid if the final estimators implement
         `predict_proba`.
+
         Parameters
         ----------
         X : iterable
@@ -843,6 +888,7 @@ class DAG(_BaseComposition):
         **predict_proba_params : dict of string -> object
             Parameters to the `predict_proba` called at the end of all
             transformations in the DAG.
+
         Returns
         -------
         y_proba : ndarray of shape (n_samples, n_classes)
@@ -852,16 +898,20 @@ class DAG(_BaseComposition):
 
     @available_if(_leaf_estimators_have("decision_function"))
     def decision_function(self, X):
-        """Transform the data, and apply `decision_function` with the final estimator.
+        """
+        Transform the data, and apply `decision_function` with the final estimator.
+
         Call `transform` of each transformer in the DAG. The transformed
         data are finally passed to the final estimator that calls
-        `decision_function` method. Only valid if the final estimator
-        implements `decision_function`.
+        `decision_function` method. Only valid if the final estimators
+        implement `decision_function`.
+
         Parameters
         ----------
         X : iterable
             Data to predict on. Must fulfill input requirements of first step
             of the DAG.
+
         Returns
         -------
         y_score : ndarray of shape (n_samples, n_classes)
@@ -871,16 +921,20 @@ class DAG(_BaseComposition):
 
     @available_if(_leaf_estimators_have("score_samples"))
     def score_samples(self, X):
-        """Transform the data, and apply `score_samples` with the final estimator.
+        """
+        Transform the data, and apply `score_samples` with the final estimator.
+
         Call `transform` of each transformer in the DAG. The transformed
         data are finally passed to the final estimator that calls
-        `score_samples` method. Only valid if the final estimator implements
+        `score_samples` method. Only valid if the final estimators implement
         `score_samples`.
+
         Parameters
         ----------
         X : iterable
             Data to predict on. Must fulfill input requirements of first step
             of the DAG.
+
         Returns
         -------
         y_score : ndarray of shape (n_samples,)
@@ -890,10 +944,13 @@ class DAG(_BaseComposition):
 
     @available_if(_leaf_estimators_have("score"))
     def score(self, X, y=None, **score_params):
-        """Transform the data, and apply `score` with the final estimator.
+        """
+        Transform the data, and apply `score` with the final estimator.
+
         Call `transform` of each transformer in the DAG. The transformed
         data are finally passed to the final estimator that calls
-        `score` method. Only valid if the final estimator implements `score`.
+        `score` method. Only valid if the final estimators implement `score`.
+
         Parameters
         ----------
         X : iterable
@@ -905,6 +962,7 @@ class DAG(_BaseComposition):
         sample_weight : array-like, default=None
             If not None, this argument is passed as ``sample_weight`` keyword
             argument to the ``score`` method of the final estimator.
+
         Returns
         -------
         score : float
@@ -914,11 +972,14 @@ class DAG(_BaseComposition):
 
     @available_if(_leaf_estimators_have("predict_log_proba"))
     def predict_log_proba(self, X, **predict_log_proba_params):
-        """Transform the data, and apply `predict_log_proba` with the final estimator.
+        """
+        Transform the data, and apply `predict_log_proba` with the final estimator.
+
         Call `transform` of each transformer in the DAG. The transformed
         data are finally passed to the final estimator that calls
         `predict_log_proba` method. Only valid if the final estimator
         implements `predict_log_proba`.
+
         Parameters
         ----------
         X : iterable
@@ -927,6 +988,7 @@ class DAG(_BaseComposition):
         **predict_log_proba_params : dict of string -> object
             Parameters to the ``predict_log_proba`` called at the end of all
             transformations in the DAG.
+
         Returns
         -------
         y_log_proba : ndarray of shape (n_samples, n_classes)
@@ -1160,7 +1222,9 @@ class DAG(_BaseComposition):
 
         return DAG(newgraph, **kwargs)
 
-    def draw(self, filename=None, style=None, format=None, layout="dot"):
+    def draw(
+        self, filename=None, style=None, detailed=False, format=None, layout="dot"
+    ):
         """
         Render a graphical view of the DAG.
 
@@ -1175,11 +1239,19 @@ class DAG(_BaseComposition):
             stdout.
         style : str, optional, choice of ['light', 'dark']
             Draw the image in light or dark mode.
+        detailed : bool, default = False
+            If True, show extra details in the node labels such as the estimator
+            signature.
         format : str, choice of ['svg', 'png', 'jpg', 'txt']
             The rendering format to use. MAy be omitted if the format can be inferred
             from the filename.
         layout : str, default = 'dot'
             The program to use for generating a graph layout.
+
+        See Also
+        --------
+
+        :meth:`skdag.dag.DAG.show`, for use in interactive notebooks.
 
         Returns
         -------
@@ -1205,7 +1277,7 @@ class DAG(_BaseComposition):
         if format not in ["svg", "png", "jpg", "txt"]:
             raise ValueError(f"Unsupported file format '{format}'")
 
-        render = DAGRenderer(self.graph_, style=style).draw(
+        render = DAGRenderer(self.graph_, detailed=detailed, style=style).draw(
             format=format, layout=layout
         )
         if filename is None:
@@ -1214,6 +1286,42 @@ class DAG(_BaseComposition):
             mode = "wb" if isinstance(render, bytes) else "w"
             with open(filename, mode) as fp:
                 fp.write(render)
+
+    def show(self, style=None, detailed=False, format=None, layout="dot"):
+        """
+        Display a graphical representation of the DAG in an interactive notebook
+        environment.
+
+        DAGs will be shown when displayed in a notebook, but calling this method
+        directly allows more options to be passed to customise the appearance more.
+
+        Arguments are as for :meth`.draw`.
+
+        Returns
+        -------
+
+        ``None``
+
+        See Also
+        --------
+
+        :meth:`skdag.DAG.draw`
+        """
+        if format is None:
+            format = "svg" if _in_notebook() else "txt"
+        data = self.draw(style=style, detailed=detailed, format=format, layout=layout)
+        if format == "svg":
+            from IPython.display import SVG, display
+
+            display(SVG(data))
+        elif format == "txt":
+            print(data)
+        elif format in ("jpg", "png"):
+            from IPython.display import Image, display
+
+            display(Image(data))
+        else:
+            raise ValueError(f"'{format}' format not supported.")
 
     def _repr_svg_(self):
         return self.draw(format="svg")

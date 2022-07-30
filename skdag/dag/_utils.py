@@ -18,6 +18,19 @@ def _is_predictor(estimator):
     )
 
 
+def _in_notebook():
+    try:
+        from IPython import get_ipython
+
+        if "IPKernelApp" not in get_ipython().config:  # pragma: no cover
+            return False
+    except ImportError:
+        return False
+    except AttributeError:
+        return False
+    return True
+
+
 def _stack(Xs, axis=0):
     """
     Where an estimator has multiple upstream dependencies, this method defines the

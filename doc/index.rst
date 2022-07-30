@@ -1,16 +1,11 @@
-.. project-template documentation master file, created by
-   sphinx-quickstart on Mon Jan 18 14:44:12 2016.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
-
 skdag - scikit-learn workflow management
 ============================================
 
 scikit-dag (``skdag``) is an open-sourced, MIT-licenced library that provides advanced
 workflow management to any machine learning operations that follow
-:mod:`sklearn<scikit-learn>` conventions. It does this by introducing Directed Acyclic
+:mod:`sklearn` conventions. It does this by introducing Directed Acyclic
 Graphs (:class:`skdag.dag.DAG`) as a drop-in replacement for traditional scikit-learn
-:mod:`sklearn.pipeline.Pipeline<pipelines>`.
+:mod:`sklearn.pipeline.Pipeline`.
 
 .. toctree::
    :maxdepth: 2
@@ -25,6 +20,12 @@ Graphs (:class:`skdag.dag.DAG`) as a drop-in replacement for traditional scikit-
    :caption: Documentation
 
    user_guide
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: API
+
    api
 
 .. toctree::
