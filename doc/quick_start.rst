@@ -1,6 +1,8 @@
-#####################################
+.. _quickstart:
+
+######################
 Quick Start with skdag
-#####################################
+######################
 
 The following tutorial shows you how to write some simple directed acyclic graphs (DAGs)
 with ``skdag``.
@@ -21,8 +23,8 @@ to do this in Ubuntu:
 
     sudo apt install graphviz graphviz-dev
 
-Creating your own scikit-learn contribution package
-===================================================
+Creating a DAG
+==============
 
 The simplest DAGs are just a chain of singular dependencies. These DAGs may be
 created from the :meth:`skdag.dag.DAG.from_pipeline` method in the same way as a
