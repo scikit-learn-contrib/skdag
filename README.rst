@@ -5,7 +5,7 @@
 .. |AppVeyor| image:: https://ci.appveyor.com/api/projects/status/github/big-o/skdag?branch=main&svg=true
 .. _AppVeyor: https://ci.appveyor.com/project/big-o/skdag
 
-.. |Codecov| image:: https://codecov.io/gh/scikit-learn-contrib/project-template/branch/master/graph/badge.svg
+.. |Codecov| image:: https://codecov.io/gh/big-o/skdag/branch/main/graph/badge.svg
 .. _Codecov: https://codecov.io/gh/big-o/skdag
 
 .. |ReadTheDocs| image:: https://readthedocs.org/projects/skdag/badge/?version=latest
