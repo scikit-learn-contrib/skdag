@@ -4,8 +4,6 @@ environment:
   matrix:
     - APPVEYOR_BUILD_WORKER_IMAGE: Ubuntu
       APPVEYOR_YML_DISABLE_PS_LINUX: true
-    - APPVEYOR_BUILD_WORKER_IMAGE: macOS
-      APPVEYOR_YML_DISABLE_PS_LINUX: true
 
 stack: python 3.8
 
