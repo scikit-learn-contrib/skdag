@@ -24,9 +24,9 @@ skdag - A more flexible alternative to scikit-learn Pipelines
 
 **skdag** brings the flexibility of Directed Acyclic Graphs (DAGs) to scikit-learn_.
 
-It enables the construction of complex workflows to allow data to flow through multiple
-estimators, with one or more start- and endpoints.
+It enables the construction of complex workflows, including model stacking, to allow
+data to flow through multiple estimators, with one or more start/endpoints.
 
-.. _documentation: https://skdag.readthedocs.io/en/latest/quick_start.html
+.. _documentation: https://skdag.readthedocs.io/
 
 Refer to the documentation_ for usage details.
