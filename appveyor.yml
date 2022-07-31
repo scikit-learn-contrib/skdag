@@ -11,7 +11,7 @@ stack: python 3.8
 
 install: |
   if [[ "${APPVEYOR_BUILD_WORKER_IMAGE}" == "Ubuntu" ]]; then
-      sudo apt install -y graphviz graphviz-dev
+      sudo apt install -y graphviz libgraphviz-dev
   elif [[ "${APPVEYOR_BUILD_WORKER_IMAGE}" == "macOS" ]]; then
       brew update
       brew install graphviz
