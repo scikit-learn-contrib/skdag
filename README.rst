@@ -12,7 +12,7 @@
 .. _ReadTheDocs: https://skdag.readthedocs.io/en/latest/?badge=latest
 
 skdag - A more flexible alternative to scikit-learn Pipelines
-============================================================
+=============================================================
 
 .. _scikit-learn: https://scikit-learn.org
 
