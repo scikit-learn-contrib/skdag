@@ -10,9 +10,9 @@ environment:
 stack: python 3.8
 
 install: |
-  if [[ "${APPVEYOR_BUILD_WORKER_IMAGE}" -eq "Ubuntu" ]]; then
+  if [[ "${APPVEYOR_BUILD_WORKER_IMAGE}" == "Ubuntu" ]]; then
       sudo apt install -y graphviz graphviz-dev
-  else
+  elif [[ "${APPVEYOR_BUILD_WORKER_IMAGE}" == "macOS" ]]; then
       brew install -y graphviz
   fi
   pip install --upgrade pip
@@ -29,4 +29,6 @@ test_script:
 after_test:
   - cp .coverage ${APPVEYOR_BUILD_FOLDER}
   - cd ${APPVEYOR_BUILD_FOLDER}
-  - codecov
+  - curl -Os https://uploader.codecov.io/latest/linux/codecov
+  - chmod +x codecov
+  - ./codecov
