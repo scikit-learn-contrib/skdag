@@ -1266,7 +1266,7 @@ class DAG(_BaseComposition):
                 from IPython import get_ipython
 
                 rich = type(get_ipython()).__name__ == "ZMQInteractiveShell"
-            except NameError:
+            except (ModuleNotFoundError, NameError):
                 rich = False
 
             format = "svg" if rich else "txt"

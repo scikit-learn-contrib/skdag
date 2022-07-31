@@ -9,12 +9,17 @@ environment:
 
 stack: python 3.8
 
-install:
-  - sudo apt install -y graphviz graphviz-dev
-  - pip install -r requirements.txt
-  - pip install -r requirements_test.txt
-  - pip install -r requirements_doc.txt
-  - pip install .
+install: |
+  if [[ "${APPVEYOR_BUILD_WORKER_IMAGE}" -eq "Ubuntu" ]]; then
+      sudo apt install -y graphviz graphviz-dev
+  else
+      brew install -y graphviz
+  fi
+  pip install --upgrade pip
+  pip install -r requirements.txt
+  pip install -r requirements_test.txt
+  pip install -r requirements_doc.txt
+  pip install .
 
 test_script:
   - mkdir for_test

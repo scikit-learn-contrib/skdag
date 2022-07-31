@@ -163,6 +163,10 @@ the next step(s).
 Note that the passthrough is not strictly necessary but it is convenient as it ensures
 the stack has a single entry point, which makes it simpler to use.
 
+The DAG infers that :meth:`predict` should be called for the two intermediate
+estimators. Our meta-estimator is then simply taking in prediction for each classifier
+as its input features.
+
 As we can now see, the stacking ensemble method gives us a boost in performance:
 
 .. code-block:: python
@@ -173,6 +177,25 @@ As we can now see, the stacking ensemble method gives us a boost in performance:
     0.138...
     >>> svr.score(X_test, y_test)
     0.128...
+
+Note that for binary classifiers you probably need to specify that only the positive
+class probability is used as input by the meta-estimator. The DAG will automatically
+infer that :meth:`predict_proba` should be called, but you will need to manually tell
+the DAG which column to take. To do this, you can simply specify your step dependencies
+as a dictionary of step name to column indices instead:
+
+.. code:: python
+
+    >>> from sklearn.ensemble import RandomForestClassifier
+    >>> from sklearn.svm import SVC
+    >>> clf_stack = (
+    ...     DAGBuilder()
+    ...     .add_step("pass", "passthrough")
+    ...     .add_step("rf", RandomForestClassifier(), deps=["pass"])
+    ...     .add_step("svr", SVC(), deps=["pass"])
+    ...     .add_step("meta", LinearRegression(), deps={"rf": 1, "svc": 1}])
+    ...     .make_dag()
+    ... )
 
 Stacking works best when a diverse range of algorithms are used to provide predictions,
 which are then fed into a very simple meta-estimator. To minimize overfitting,
