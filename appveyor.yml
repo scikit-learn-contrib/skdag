@@ -13,7 +13,7 @@ install: |
   if [[ "${APPVEYOR_BUILD_WORKER_IMAGE}" == "Ubuntu" ]]; then
       sudo apt install -y graphviz graphviz-dev
   elif [[ "${APPVEYOR_BUILD_WORKER_IMAGE}" == "macOS" ]]; then
-      brew install -y graphviz
+      brew install graphviz
   fi
   pip install --upgrade pip
   pip install -r requirements.txt
