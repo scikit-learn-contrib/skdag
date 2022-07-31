@@ -5,6 +5,22 @@ Quick Start with skdag
 The following tutorial shows you how to write some simple directed acyclic graphs (DAGs)
 with ``skdag``.
 
+Installation
+============
+
+Installing skdag is simple:
+
+.. code:: bash
+
+    pip install skdag
+
+Note that to visualise graphs you need to install the graphviz libraries too. Here's how
+to do this in Ubuntu:
+
+.. code:: bash
+
+    sudo apt install graphviz graphviz-dev
+
 Creating your own scikit-learn contribution package
 ===================================================
 

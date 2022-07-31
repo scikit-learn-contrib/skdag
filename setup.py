@@ -54,8 +54,8 @@ CLASSIFIERS = [
     "Programming Language :: Python :: 3.9",
 ]
 EXTRAS_REQUIRE = {
-    "tests": ["pytest", "pytest-cov"],
-    "docs": ["sphinx", "sphinx-gallery", "sphinx_rtd_theme", "numpydoc", "matplotlib"],
+    tgt: parse_requirements(f"requirements_{tgt}.txt")
+    for tgt in ["test", "doc"]
 }
 
 setup(
