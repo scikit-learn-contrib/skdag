@@ -220,7 +220,8 @@ def test_dag_raise_set_params_error():
         dag.set_params(cls__invalid_param="nope")
 
 
-def test_dag_stacking_pca_svm_rf():
+@pytest.mark.parametrize("idx", [1, [1]])
+def test_dag_stacking_pca_svm_rf(idx):
     # Test the various methods of the pipeline (pca + svm).
     X = cancer.data
     y = cancer.target
@@ -235,7 +236,7 @@ def test_dag_stacking_pca_svm_rf():
         .add_step("pca", pca)
         .add_step("svc", svc, deps=["pca"])
         .add_step("rf", rf, deps=["pca"])
-        .add_step("log", log, deps={"svc": 1, "rf": 1})
+        .add_step("log", log, deps={"svc": idx, "rf": idx})
         .make_dag()
     )
     dag.fit(X, y)
