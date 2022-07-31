@@ -28,6 +28,19 @@ from sklearn.utils.validation import check_is_fitted, check_memory
 __all__ = ["DAG", "DAGStep"]
 
 
+def _stack_inputs(X, node):
+    cols = [_safe_indexing(X[dep], node.deps[dep], axis=1) for dep in node.deps]
+    X_stacked = _stack(
+        [
+            col.reshape(-1, 1) if col is not None and col.ndim < 2 else col
+            for col in cols
+        ],
+        axis=node.axis,
+    )
+
+    return X_stacked
+
+
 def _transform_one(transformer, X, weight, allow_predictor=True, **fit_params):
     if _is_passthrough(transformer):
         res = X
@@ -74,10 +87,12 @@ def _fit_transform_one(
         elif hasattr(transformer, "transform"):
             res = transformer.fit(X, y, **fit_params).transform(X)
         elif allow_predictor:
-            if hasattr(transformer, "fit_predict"):
-                res = transformer.fit_predict(X, y, **fit_params)
-            elif hasattr(transformer, "predict"):
-                res = transformer.fit(X, y, **fit_params).predict(X)
+            for fn in ["predict_proba", "decision_function", "predict"]:
+                if hasattr(transformer, fn):
+                    res = getattr(transformer.fit(X, y, **fit_params), fn)(X)
+                    if res.ndim < 2:
+                        res = res.reshape(-1, 1)
+                    break
             else:
                 failed = True
                 res = None
@@ -128,10 +143,7 @@ def _parallel_fit(dag, step, Xin, Xs, y, fit_transform_fn, memory, **fit_params)
     transformer = step.estimator
 
     if step.deps:
-        X = _stack(
-            [_safe_indexing(Xs[dep], step.deps[dep], axis=1) for dep in step.deps],
-            axis=step.axis,
-        )
+        X = _stack_inputs(Xs, step)
     else:
         # For root nodes, the destination rather than the source is
         # specified.
@@ -166,10 +178,7 @@ def _parallel_fit(dag, step, Xin, Xs, y, fit_transform_fn, memory, **fit_params)
 def _parallel_transform(dag, step, Xin, Xs, transform_fn, **fn_params):
     transformer = step.estimator
     if step.deps:
-        X = _stack(
-            [_safe_indexing(Xs[dep], step.deps[dep], axis=1) for dep in step.deps],
-            axis=step.axis,
-        )
+        X = _stack_inputs(Xs, step)
     else:
         # For root nodes, the destination rather than the source is
         # specified.
@@ -198,7 +207,7 @@ def _parallel_fit_leaf(dag, leaf, Xts, y, **fit_params):
         if leaf.estimator == "passthrough":
             fitted_estimator = leaf.estimator
         else:
-            Xt = _stack([Xts[dep] for dep in leaf.deps], axis=leaf.axis)
+            Xt = _stack_inputs(Xts, leaf)
             fitted_estimator = leaf.estimator.fit(Xt, y, **fit_params)
 
     return fitted_estimator
@@ -208,10 +217,7 @@ def _parallel_execute(
     dag, leaf, fn, Xts, y=None, fit_first=False, fit_params=None, fn_params=None
 ):
     with _print_elapsed_time("DAG", dag._log_message(leaf)):
-        Xt = _stack(
-            [_safe_indexing(Xts[dep], leaf.deps[dep], axis=1) for dep in leaf.deps],
-            axis=leaf.axis,
-        )
+        Xt = _stack_inputs(Xts, leaf)
         fit_params = fit_params or {}
         fn_params = fn_params or {}
         if leaf.estimator == "passthrough":

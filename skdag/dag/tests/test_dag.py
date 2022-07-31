@@ -17,10 +17,11 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.linear_model import LinearRegression
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.decomposition import PCA
-from sklearn.datasets import load_iris
+from sklearn import datasets
 from sklearn.ensemble import RandomForestClassifier
 
-iris = load_iris()
+iris = datasets.load_iris()
+cancer = datasets.load_breast_cancer()
 
 JUNK_FOOD_DOCS = (
     "the pizza pizza beer copyright",
@@ -221,8 +222,8 @@ def test_dag_raise_set_params_error():
 
 def test_dag_stacking_pca_svm_rf():
     # Test the various methods of the pipeline (pca + svm).
-    X = iris.data
-    y = iris.target
+    X = cancer.data
+    y = cancer.target
     # Build a simple model stack with some preprocessing.
     pca = PCA(svd_solver="full", n_components="mle", whiten=True)
     svc = SVC(probability=True, random_state=0)
@@ -234,13 +235,13 @@ def test_dag_stacking_pca_svm_rf():
         .add_step("pca", pca)
         .add_step("svc", svc, deps=["pca"])
         .add_step("rf", rf, deps=["pca"])
-        .add_step("log", log, deps=["svc", "rf"])
+        .add_step("log", log, deps={"svc": 1, "rf": 1})
         .make_dag()
     )
     dag.fit(X, y)
 
-    prob_shape = len(iris.target), len(iris.target_names)
-    tgt_shape = iris.target.shape
+    prob_shape = len(cancer.target), len(cancer.target_names)
+    tgt_shape = cancer.target.shape
 
     assert dag.predict_proba(X).shape == prob_shape
     assert dag.predict(X).shape == tgt_shape
