@@ -2,28 +2,19 @@ build: false
 
 environment:
   matrix:
-    - PYTHON: "C:\\Miniconda3-x64"
-      PYTHON_VERSION: "3.8.x"
-      PYTHON_ARCH: "64"
-      NUMPY_VERSION: "*"
-      SCIPY_VERSION: "*"
-      SKLEARN_VERSION: "*"
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+      APPVEYOR_YML_DISABLE_PS_LINUX: true
+    - APPVEYOR_BUILD_WORKER_IMAGE: Ubuntu
+      APPVEYOR_YML_DISABLE_PS_LINUX: true
+    - APPVEYOR_BUILD_WORKER_IMAGE: macOS
+      APPVEYOR_YML_DISABLE_PS_LINUX: true
 
-    - PYTHON: "C:\\Miniconda3-x64"
-      PYTHON_VERSION: "3.9.x"
-      PYTHON_ARCH: "64"
-      NUMPY_VERSION: "*"
-      SCIPY_VERSION: "*"
-      SKLEARN_VERSION: "*"
+stack: python 3.8
 
 install:
-  # Prepend miniconda installed Python to the PATH of this build
-  # Add Library/bin directory to fix issue
-  # https://github.com/conda/conda/issues/1753
-  - "SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PYTHON%\\Library\\bin;%PATH%"
-  # install the dependencies
-  - "conda install --yes -c conda-forge pip numpy==%NUMPY_VERSION% scipy==%SCIPY_VERSION% scikit-learn==%SKLEARN_VERSION%"
-  - pip install codecov nose pytest pytest-cov
+  - pip install -r requirements.txt
+  - pip install -r requirements_test.txt
+  - pip install -r requirements_doc.txt
   - pip install .
 
 test_script:
@@ -32,6 +23,6 @@ test_script:
   - pytest -v --cov=skdag --pyargs skdag
 
 after_test:
-  - cp .coverage %APPVEYOR_BUILD_FOLDER%
-  - cd %APPVEYOR_BUILD_FOLDER%
+  - cp .coverage ${APPVEYOR_BUILD_FOLDER}
+  - cd ${APPVEYOR_BUILD_FOLDER}
   - codecov
