@@ -4,5 +4,5 @@ requirements_file: requirements.txt
 python:
   pip_install: true
   extra_requirements:
-    - tests
-    - docs
+    - test
+    - doc
