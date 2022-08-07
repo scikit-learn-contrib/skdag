@@ -19,6 +19,7 @@ install: |
   for f in $(find . -maxdepth 1 -name 'requirements*.txt'); do
     pip install -r ${f}
   done
+  pip install pandas  # Needed for some estimator checks.
   pip install .
 
 test_script:
