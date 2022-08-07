@@ -9,7 +9,9 @@ from inspect import signature
 from itertools import chain
 
 import networkx as nx
+import numpy as np
 from joblib import Parallel, delayed
+from scipy.sparse import dok_matrix, issparse
 from skdag.dag._render import DAGRenderer
 from skdag.dag._utils import (
     _in_notebook,
@@ -28,15 +30,21 @@ from sklearn.utils.validation import check_is_fitted, check_memory
 __all__ = ["DAG", "DAGStep"]
 
 
-def _stack_inputs(X, node):
-    cols = [_safe_indexing(X[dep], node.deps[dep], axis=1) for dep in node.deps]
-    X_stacked = _stack(
-        [
-            col.reshape(-1, 1) if col is not None and col.ndim < 2 else col
-            for col in cols
-        ],
-        axis=node.axis,
-    )
+def _stack_inputs(dag, X, node):
+    # For root nodes, the dependency is just the node name itself.
+    deps = {node.name: None} if node.is_root else node.deps
+
+    cols = [_safe_indexing(X[dep], deps[dep], axis=1) for dep in deps]
+
+    to_stack = [
+        # If we sliced a single column from an input, reshape it to a 2d array.
+        col.reshape(-1, 1)
+        if col is not None and deps[dep] is not None and col.ndim < 2
+        else col
+        for col, dep in zip(cols, deps)
+    ]
+
+    X_stacked = _stack(to_stack, axis=node.axis)
 
     return X_stacked
 
@@ -143,11 +151,12 @@ def _parallel_fit(dag, step, Xin, Xs, y, fit_transform_fn, memory, **fit_params)
     transformer = step.estimator
 
     if step.deps:
-        X = _stack_inputs(Xs, step)
+        X = _stack_inputs(dag, Xs, step)
     else:
         # For root nodes, the destination rather than the source is
         # specified.
-        X = Xin[step.name]
+        # X = Xin[step.name]
+        X = _stack_inputs(dag, Xin, step)
 
     clsname = type(dag).__name__
     if transformer is None or transformer == "passthrough":
@@ -178,11 +187,12 @@ def _parallel_fit(dag, step, Xin, Xs, y, fit_transform_fn, memory, **fit_params)
 def _parallel_transform(dag, step, Xin, Xs, transform_fn, **fn_params):
     transformer = step.estimator
     if step.deps:
-        X = _stack_inputs(Xs, step)
+        X = _stack_inputs(dag, Xs, step)
     else:
         # For root nodes, the destination rather than the source is
         # specified.
-        X = Xin[step.name]
+        X = _stack_inputs(dag, Xin, step)
+        # X = Xin[step.name]
 
     clsname = type(dag).__name__
     if transformer is None or transformer == "passthrough":
@@ -207,7 +217,7 @@ def _parallel_fit_leaf(dag, leaf, Xts, y, **fit_params):
         if leaf.estimator == "passthrough":
             fitted_estimator = leaf.estimator
         else:
-            Xt = _stack_inputs(Xts, leaf)
+            Xt = _stack_inputs(dag, Xts, leaf)
             fitted_estimator = leaf.estimator.fit(Xt, y, **fit_params)
 
     return fitted_estimator
@@ -217,7 +227,7 @@ def _parallel_execute(
     dag, leaf, fn, Xts, y=None, fit_first=False, fit_params=None, fn_params=None
 ):
     with _print_elapsed_time("DAG", dag._log_message(leaf)):
-        Xt = _stack_inputs(Xts, leaf)
+        Xt = _stack_inputs(dag, Xts, leaf)
         fit_params = fit_params or {}
         fn_params = fn_params or {}
         if leaf.estimator == "passthrough":
@@ -267,14 +277,6 @@ class DAGStep:
         self.is_root = False
         self.is_leaf = False
         self.is_fitted = False
-
-    def copy(self):
-        return self.__class__(
-            name=self.name,
-            estimator=clone(self.estimator),
-            deps=self.deps.copy(),
-            axis=self.axis,
-        )
 
     def __repr__(self):
         return f"{type(self).__name__}({repr(self.name)}, {repr(self.estimator)})"
@@ -516,7 +518,7 @@ class DAG(_BaseComposition):
         self : object
             DAG class instance.
         """
-        step_names = set([step[0] for step in self.steps_])
+        step_names = set(self.step_names)
         for param in list(params.keys()):
             if "__" not in param and param in step_names:
                 self.graph_.nodes[param]["step"].estimator = params.pop(param)
@@ -571,6 +573,7 @@ class DAG(_BaseComposition):
 
         fit_transform_one_cached = memory.cache(_fit_transform_one)
 
+        root_names = set([root.name for root in self.roots_])
         Xin = self._resolve_inputs(X)
         Xs = {}
         with Parallel(n_jobs=self.n_jobs) as parallel:
@@ -603,11 +606,15 @@ class DAG(_BaseComposition):
 
                 # If all of a dep's dependents are now complete, we can free up some
                 # memory.
+                root_names = root_names - set(stage_names)
                 for dep in {dep for step in stage for dep in step.deps}:
                     dependents = self.graph_.successors(dep)
-                    if all(d in Xs for d in dependents):
+                    if all(d in Xs and d not in root_names for d in dependents):
                         del Xs[dep]
 
+        # If a root node is also a leaf, it hasn't been fit yet and we need to pass on
+        # its input for later.
+        Xs.update({name: Xin[name] for name in root_names})
         return Xs
 
     def _transform(self, X, **fn_params_steps):
@@ -616,6 +623,7 @@ class DAG(_BaseComposition):
 
         transform_one_cached = memory.cache(_transform_one)
 
+        root_names = set([root.name for root in self.roots_])
         Xin = self._resolve_inputs(X)
         Xs = {}
         with Parallel(n_jobs=self.n_jobs) as parallel:
@@ -637,15 +645,19 @@ class DAG(_BaseComposition):
 
                 # If all of a dep's dependents are now complete, we can free up some
                 # memory.
+                root_names = root_names - set(stage_names)
                 for dep in {dep for step in stage for dep in step.deps}:
                     dependents = self.graph_.successors(dep)
-                    if all(d in Xs for d in dependents):
+                    if all(d in Xs and d not in root_names for d in dependents):
                         del Xs[dep]
 
+        # If a root node is also a leaf, it hasn't been fit yet and we need to pass on
+        # its input for later.
+        Xs.update({name: Xin[name] for name in root_names})
         return Xs
 
     def _resolve_inputs(self, X):
-        if isinstance(X, (dict, Bunch, UserDict)):
+        if isinstance(X, (dict, Bunch, UserDict)) and not isinstance(X, dok_matrix):
             inputs = sorted(X.keys())
             if inputs != sorted(root.name for root in self.roots_):
                 raise ValueError(
@@ -660,10 +672,14 @@ class DAG(_BaseComposition):
                 )
             X = {self.roots_[0].name: X}
 
+        X = {step: x if issparse(x) else np.asarray(x) for step, x in X.items()}
+
         return X
 
     def _match_input_format(self, Xin, Xout):
-        if len(self.leaves_) == 1 and not isinstance(Xin, (dict, Bunch, UserDict)):
+        if len(self.leaves_) == 1 and (
+            not isinstance(Xin, (dict, Bunch, UserDict)) or isinstance(Xin, dok_matrix)
+        ):
             return Xout[self.leaves_[0].name]
         return Bunch(**Xout)
 
@@ -706,6 +722,13 @@ class DAG(_BaseComposition):
         for est, leaf in zip(fitted_estimators, self.leaves_):
             leaf.estimator = est
             leaf.is_fitted = True
+
+        # If we have a single root, mirror certain attributes in the DAG.
+        if len(self.roots_) == 1:
+            root = self.roots_[0].estimator
+            for attr in ["n_features_in_", "feature_names_in_"]:
+                if hasattr(root, attr):
+                    setattr(self, attr, getattr(root, attr))
 
         return self
 
@@ -1094,37 +1117,39 @@ class DAG(_BaseComposition):
     @property
     def leaves_(self):
         if not hasattr(self, "_leaves"):
-            self._leaves = []
-            for name, estimator in self.steps_:
-                if self.graph_.out_degree(name) == 0:
-                    step = self.graph_.nodes[name]["step"]
-                    step.is_leaf = True
-                    self._leaves.append(step)
+            self._leaves = [node for node in self.nodes_ if node.is_leaf]
 
         return self._leaves
 
     @property
     def branches_(self):
         if not hasattr(self, "_branches"):
-            self._branches = []
-            for name, estimator in self.steps_:
-                if self.graph_.in_degree(name) > 0 and self.graph_.out_degree(name) > 0:
-                    step = self.graph_.nodes[name]["step"]
-                    self._branches.append(step)
+            self._branches = [
+                node for node in self.nodes_ if not node.is_leaf and not node.is_root
+            ]
 
         return self._branches
 
     @property
     def roots_(self):
         if not hasattr(self, "_roots"):
-            self._roots = []
-            for name, estimator in self.steps_:
-                if self.graph_.in_degree(name) == 0:
-                    step = self.graph_.nodes[name]["step"]
-                    step.is_root = True
-                    self._roots.append(step)
+            self._roots = [node for node in self.nodes_ if node.is_root]
 
         return self._roots
+
+    @property
+    def nodes_(self):
+        if not hasattr(self, "_nodes"):
+            self._nodes = []
+            for name, estimator in self.steps_:
+                step = self.graph_.nodes[name]["step"]
+                if self.graph_.out_degree(name) == 0:
+                    step.is_leaf = True
+                if self.graph_.in_degree(name) == 0:
+                    step.is_root = True
+                self._nodes.append(step)
+
+        return self._nodes
 
     @property
     def steps_(self):
@@ -1134,6 +1159,7 @@ class DAG(_BaseComposition):
                 (node, self.graph_.nodes[node]["step"].estimator)
                 for node in nx.lexicographical_topological_sort(self.graph_)
             ]
+
         return self._steps
 
     def join(self, other, edges, **kwargs):
@@ -1199,10 +1225,10 @@ class DAG(_BaseComposition):
         |x|
         o o    calib,lr
         """
-        if set(self.graph_.nodes) & set(other.graph_.nodes):
+        if set(self.step_names) & set(other.step_names):
             raise ValueError("DAGs with overlapping step names cannot be combined.")
 
-        newgraph = deepcopy(self.graph).copy()
+        newgraph = deepcopy(self.graph_).copy()
         for edge in edges:
             if len(edge) == 2:
                 u, v, idx = *edge, None
@@ -1215,8 +1241,13 @@ class DAG(_BaseComposition):
                 raise KeyError(v)
 
             attrs = other.graph_.nodes[v]
-            # This also clones the estimator
-            step = attrs["step"].copy()
+            old_step = attrs["step"]
+            step = DAGStep(
+                name=old_step.name,
+                estimator=old_step.estimator,
+                deps=old_step.deps,
+                axis=old_step.axis,
+            )
 
             if u not in step.deps:
                 step.deps[u] = idx
@@ -1380,8 +1411,8 @@ class DAG(_BaseComposition):
         return Bunch(**dict(self.steps_))
 
     @property
-    def nodes(self):
-        return self.graph_.nodes
+    def step_names(self):
+        return list(self.graph_.nodes)
 
     @property
     def edges(self):
@@ -1404,16 +1435,6 @@ class DAG(_BaseComposition):
         """The classes labels. Only exist if the leaf steps are classifiers."""
         return self._get_leaf_attr("classes_")
 
-    @property
-    def n_features_in_(self):
-        """Number of features seen during first step `fit` method."""
-        return self._get_leaf_attr("n_features_in_")
-
-    @property
-    def feature_names_in_(self):
-        """Names of features seen during first step `fit` method."""
-        return self._get_leaf_attr("feature_names_in_")
-
     def __sklearn_is_fitted__(self):
         """Indicate whether DAG has been fit."""
         try:
@@ -1428,13 +1449,21 @@ class DAG(_BaseComposition):
             return False
 
     def _more_tags(self):
-        # check if first estimator expects pairwise input
-        if len(self.leaves_) == 1:
-            return _safe_tags(self.leaves_[0].estimator, "pairwise")
-        else:
-            return Bunch(
-                **{
-                    leaf.name: _safe_tags(leaf.estimator, "pairwise")
-                    for leaf in self.leaves_
-                }
-            )
+        tags = {}
+
+        # We assume the DAG can handle NaN if *all* the steps can.
+        tags["allow_nan"] = all(
+            _safe_tags(node.estimator, "allow_nan") for node in self.nodes_
+        )
+
+        # Check if all *root* nodes expect pairwise input.
+        tags["pairwise"] = all(
+            _safe_tags(root.estimator, "pairwise") for root in self.roots_
+        )
+
+        # CHeck if all *leaf* notes support multioutput
+        tags["multioutput"] = all(
+            _safe_tags(leaf.estimator, "multioutput") for leaf in self.leaves_
+        )
+
+        return tags
