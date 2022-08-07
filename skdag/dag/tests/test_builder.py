@@ -38,8 +38,6 @@ def test_builder_basics():
 def test_pipeline():
     steps = [("tr", Transf()), ("ident", "passthrough"), ("est", Mult())]
 
-    pipe = Pipeline(steps=steps)
-
     builder = DAGBuilder()
     prev = None
     for name, est in steps:
@@ -48,4 +46,4 @@ def test_pipeline():
 
     dag = builder.make_dag()
 
-    assert dag.steps_ == pipe.steps
+    assert dag.steps_ == steps

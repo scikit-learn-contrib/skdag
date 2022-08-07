@@ -1,24 +1,24 @@
 """
 Test the DAG module.
 """
-import time
 import re
+import time
 
-import pytest
 import numpy as np
+import pytest
 from skdag import DAG, DAGBuilder
 from skdag.dag.tests.utils import FitParamT, Mult, NoFit, NoTrans, Transf
-
-from sklearn.utils._testing import assert_array_almost_equal
-from sklearn.base import clone, BaseEstimator
-from sklearn.pipeline import Pipeline
-from sklearn.svm import SVC
-from sklearn.linear_model import LogisticRegression
-from sklearn.linear_model import LinearRegression
-from sklearn.feature_selection import SelectKBest, f_classif
-from sklearn.decomposition import PCA
 from sklearn import datasets
+from sklearn.base import BaseEstimator, clone
+from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+from sklearn.utils._testing import assert_array_almost_equal
+from sklearn.utils.estimator_checks import parametrize_with_checks
 
 iris = datasets.load_iris()
 cancer = datasets.load_breast_cancer()
@@ -114,6 +114,16 @@ def test_dag_invalid_parameters():
     params2.pop("svc")
     params2.pop("anova")
     assert params == params2
+
+
+def test_dag_simple():
+    # Build a simple DAG of one node
+    rng = np.random.default_rng(1)
+    X = rng.random(size=(20, 5))
+
+    dag = DAGBuilder().add_step("clf", FitParamT()).make_dag()
+    dag.fit(X)
+    dag.predict(X)
 
 
 def test_dag_pipeline_init():
@@ -273,15 +283,15 @@ def test_dag_draw():
     )
 
     txt = dag.draw(format="txt")
-    for step in dag.nodes:
+    for step in dag.step_names:
         assert step in txt
 
     svg = dag.draw(format="svg")
-    for step in dag.nodes:
+    for step in dag.step_names:
         assert f"<title>{step}</title>" in svg
 
     svg = dag.draw(format="svg", style="dark")
-    for step in dag.nodes:
+    for step in dag.step_names:
         assert f"<title>{step}</title>" in svg
 
     with pytest.raises(ValueError):
@@ -292,3 +302,30 @@ def test_dag_draw():
     for step, est in dag.steps_:
         assert f"<title>{step}</title>" in svg
         assert f"{type(est).__name__}" in svg
+
+
+@parametrize_with_checks(
+    [
+        DAG.from_pipeline([("ss", StandardScaler())]),
+        DAG.from_pipeline([("lr", LinearRegression())]),
+        (
+            DAGBuilder()
+            .add_step("pca", PCA(n_components=1))
+            .add_step("svc", SVC(probability=True, random_state=0), deps=["pca"])
+            .add_step("rf", RandomForestClassifier(random_state=0), deps=["pca"])
+            .add_step("log", LogisticRegression(), deps=["svc", "rf"])
+            .make_dag()
+        ),
+    ]
+)
+def test_dag_check_estimator(estimator, check):
+    # Since some parameters are estimators, we expect them to be modified during fit(),
+    # which is why we skip these checks (in line with checks on other metaestimators
+    # like Pipeline)
+    if check.func.__name__ in [
+        "check_estimators_overwrite_params",
+        "check_dont_overwrite_parameters",
+    ]:
+        # we don't clone in pipeline or feature union
+        return
+    check(estimator)
