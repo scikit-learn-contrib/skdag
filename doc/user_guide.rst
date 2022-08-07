@@ -42,7 +42,7 @@ ASCII text:
     |
     o    lr
 
-.. image:: _static/img/dag1.svg
+.. image:: _static/img/dag1.png
 
 For more complex DAGs, it is recommended to use a :class:`skdag.dag.DAGBuilder`,
 which allows you to define the graph by specifying the dependencies of each new
@@ -66,7 +66,7 @@ estimator:
     |/
     o    lr
 
-.. image:: _static/img/dag2.svg
+.. image:: _static/img/dag2.png
 
 In the above examples we pass the first four columns directly to a regressor, but
 the remaining columns have dimensionality reduction applied first before being
@@ -101,7 +101,7 @@ inputs and multiple outputs. Let's say we want to compare two different classifi
     |x|
     o o    lr,rf
 
-.. image:: _static/img/dag3.svg
+.. image:: _static/img/dag3.png
 
 Now our DAG will return two outputs: one from each classifier. Multiple outputs are
 returned as a :class:`sklearn.utils.Bunch<Bunch>`:
@@ -158,7 +158,7 @@ the next step(s).
     ... )
     >>> stack.fit(X_train, y_train)
 
-.. image:: _static/img/stack.svg
+.. image:: _static/img/stack.png
 
 Note that the passthrough is not strictly necessary but it is convenient as it ensures
 the stack has a single entry point, which makes it simpler to use.

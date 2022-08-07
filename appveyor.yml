@@ -16,9 +16,10 @@ install: |
     brew install graphviz
   fi
   pip install --upgrade pip
-  pip install -r requirements.txt
-  pip install -r requirements_test.txt
-  pip install -r requirements_doc.txt
+  for f in $(find . -maxdepth 1 -name 'requirements*.txt'); do
+    pip install -r ${f}
+  done
+  pip install pandas  # Needed for some estimator checks.
   pip install .
 
 test_script:
