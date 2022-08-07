@@ -50,7 +50,14 @@ class DAGRenderer:
                 shape="box",
             )
 
-        A = nx.nx_agraph.to_agraph(G)
+        try:
+            A = nx.nx_agraph.to_agraph(G)
+        except (ImportError, ModuleNotFoundError) as err:
+            raise ImportError(
+                "DAG visualisation requires pygraphviz to be installed. "
+                "See http://pygraphviz.github.io/ for guidance."
+            ) from err
+
         A.graph_attr["rankdir"] = "LR"
         if self.style is not None:
             A.graph_attr.update(
