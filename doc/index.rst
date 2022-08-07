@@ -38,7 +38,7 @@ cases including complex pre-processing, model stacking and benchmarking.
 
    dag.show(detailed=True)
 
-.. image:: _static/img/cover.svg
+.. image:: _static/img/cover.png
 
 The above DAG imputes missing values, runs PCA on the columns relating to blood test
 results and leaves the other columns as they are. Then they get passed to three

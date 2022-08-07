@@ -16,12 +16,8 @@ Installing skdag is simple:
 
     pip install skdag
 
-Note that to visualise graphs you need to install the graphviz libraries too. Here's how
-to do this in Ubuntu:
-
-.. code:: bash
-
-    sudo apt install graphviz graphviz-dev
+Note that to visualise graphs you need to install the graphviz libraries too. See the
+`pygraphviz documentation <https://pygraphviz.github.io/>`_ for installation guidance.
 
 Creating a DAG
 ==============
@@ -48,7 +44,7 @@ o    pca
 o    lr
 <BLANKLINE>
 
-.. image:: _static/img/dag1.svg
+.. image:: _static/img/dag1.png
 
 For more complex DAGs, it is recommended to use a :class:`skdag.dag.DAGBuilder`,
 which allows you to define the graph by specifying the dependencies of each new
@@ -71,7 +67,7 @@ o o    blood,vitals
 o    lr
 <BLANKLINE>
 
-.. image:: _static/img/dag2.svg
+.. image:: _static/img/dag2.png
 
 In the above examples we pass the first four columns directly to a regressor, but
 the remaining columns have dimensionality reduction applied first before being
@@ -103,7 +99,7 @@ o o    blood,vitals
 o o    lr,rf
 <BLANKLINE>
 
-.. image:: _static/img/dag3.svg
+.. image:: _static/img/dag3.png
 
 Now our DAG will return two outputs: one from each classifier. Multiple outputs are
 returned as a :class:`sklearn.utils.Bunch<Bunch>`:

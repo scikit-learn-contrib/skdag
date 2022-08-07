@@ -2,7 +2,6 @@ black
 joblib
 networkx>=2.6
 numpy
-pygraphviz
 scipy
 scikit-learn
 stackeddag
