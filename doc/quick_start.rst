@@ -26,23 +26,26 @@ The simplest DAGs are just a chain of singular dependencies. These DAGs may be
 created from the :meth:`skdag.dag.DAG.from_pipeline` method in the same way as a
 DAG:
 
->>> from sklearn.decomposition import PCA
->>> from sklearn.impute import SimpleImputer
->>> from sklearn.linear_model import LogisticRegression
->>> dag = DAG.from_pipeline(
-...     steps=[
-...         ("impute", SimpleImputer()),
-...         ("pca", PCA()),
-...         ("lr", LogisticRegression())
-...     ]
-... )
->>> dag.draw()
-o    impute
-|
-o    pca
-|
-o    lr
-<BLANKLINE>
+.. code-block:: python
+
+    >>> from skdag import DAGBuilder
+    >>> from sklearn.decomposition import PCA
+    >>> from sklearn.impute import SimpleImputer
+    >>> from sklearn.linear_model import LogisticRegression
+    >>> dag = DAGBuilder().from_pipeline(
+    ...     steps=[
+    ...         ("impute", SimpleImputer()),
+    ...         ("pca", PCA()),
+    ...         ("lr", LogisticRegression())
+    ...     ]
+    ... ).make_dag()
+    >>> dag.show()
+    o    impute
+    |
+    o    pca
+    |
+    o    lr
+    <BLANKLINE>
 
 .. image:: _static/img/dag1.png
 
@@ -52,7 +55,6 @@ estimator:
 
 .. code-block:: python
 
-    >>> from skdag import DAGBuilder
     >>> dag = (
     ...     DAGBuilder(infer_dataframe=True)
     ...     .add_step("impute", SimpleImputer())
@@ -61,7 +63,7 @@ estimator:
     ...     .add_step("lr", LogisticRegression(random_state=0), deps=["blood", "vitals"])
     ...     .make_dag()
     ... )
-    >>> dag.draw()
+    >>> dag.show()
     o    impute
     |\
     o o    blood,vitals
@@ -69,7 +71,7 @@ estimator:
     o    lr
     <BLANKLINE>
 
-.. image:: _static/img/dag2.png
+.. image:: _static/img/dag2a.png
 
 In the above examples we pass the first four columns directly to a regressor, but
 the remaining columns have dimensionality reduction applied first before being
@@ -82,19 +84,19 @@ on how to control this behaviour, see the `User Guide <user_guide.html>`_.
 The DAG may now be used as an estimator in its own right:
 
 >>> from sklearn import datasets
->>> X, y = datasets.load_diabetes(return_X_y=True)
->>> dag.fit_predict(X, y)
-array([...
+>>> X, y = datasets.load_diabetes(return_X_y=True, as_frame=True)
+>>> type(dag.fit_predict(X, y))
+<class 'pandas.core.series.Series'>
 
 In an extension to the scikit-learn estimator interface, DAGs also support multiple
 inputs and multiple outputs. Let's say we want to compare two different classifiers:
 
 >>> from sklearn.ensemble import RandomForestClassifier
->>> cal = DAG.from_pipeline(
+>>> cal = DAGBuilder(infer_dataframe=True).from_pipeline(
 ...     [("rf", RandomForestClassifier(random_state=0))]
-... )
+... ).make_dag()
 >>> dag2 = dag.join(cal, edges=[("blood", "rf"), ("vitals", "rf")])
->>> dag2.draw()
+>>> dag2.show()
 o    impute
 |\
 o o    blood,vitals
@@ -102,16 +104,16 @@ o o    blood,vitals
 o o    lr,rf
 <BLANKLINE>
 
-.. image:: _static/img/dag3.png
+.. image:: _static/img/dag3a.png
 
 Now our DAG will return two outputs: one from each classifier. Multiple outputs are
 returned as a :class:`sklearn.utils.Bunch<Bunch>`:
 
 >>> y_pred = dag2.fit_predict(X, y)
->>> y_pred.lr
-array([...
->>> y_pred.rf
-array([...
+>>> type(y_pred.lr)
+<class 'pandas.core.series.Series'>
+>>> type(y_pred.rf)
+<class 'pandas.core.series.Series'>
 
 Similarly, multiple inputs are also acceptable and inputs can be provided by
 specifying ``X`` and ``y`` as ``dict``-like objects.

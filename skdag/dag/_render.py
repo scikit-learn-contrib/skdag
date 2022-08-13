@@ -1,5 +1,8 @@
-import black
 import html
+from typing import Iterable
+
+import black
+from matplotlib.pyplot import isinteractive
 import networkx as nx
 import stackeddag.core as sd
 from skdag.dag._utils import _is_passthrough
@@ -52,7 +55,7 @@ class DAGRenderer:
 
         try:
             A = nx.nx_agraph.to_agraph(G)
-        except (ImportError, ModuleNotFoundError) as err:
+        except (ImportError, ModuleNotFoundError) as err:  # pragma: no cover
             raise ImportError(
                 "DAG visualisation requires pygraphviz to be installed. "
                 "See http://pygraphviz.github.io/ for guidance."
@@ -114,6 +117,36 @@ class DAGRenderer:
                         for key, val in self._STYLES[self.style].items()
                         if key.startswith("edge__")
                     }
+                )
+            cols = G.nodes[v]["step"].deps[u]
+            if cols:
+                if isinstance(cols, Iterable):
+                    cols = list(cols)
+
+                    if len(cols) > 5:
+                        colrepr = f"[{repr(cols[0])}, ..., {repr(cols[-1])}]"
+                    else:
+                        colrepr = repr(cols)
+                elif callable(cols):
+                    selector = cols
+                    cols = {}
+                    for attr in ["pattern", "dtype_include", "dtype_exclude"]:
+                        if hasattr(selector, attr):
+                            val = getattr(selector, attr)
+                            if val is not None:
+                                cols[attr] = val
+                    if cols:
+                        selrepr = ", ".join(
+                            f"{key}={repr(val)}" for key, val in cols.items()
+                        )
+                        colrepr = f"column_selector({selrepr})"
+                    else:
+                        colrepr = f"{selector.__name__}()"
+                else:
+                    colrepr = repr(cols)
+
+                aedge.attr.update(
+                    {"label": colrepr, "fontsize": "8pt", "fontname": "SANS"}
                 )
 
         A.layout()

@@ -2,16 +2,14 @@
 Test the DAG module.
 """
 import re
-import time
 
 import numpy as np
 import pandas as pd
 import pytest
-from skdag import DAG, DAGBuilder
+from skdag import DAGBuilder
 from skdag.dag.tests.utils import FitParamT, Mult, NoFit, NoTrans, Transf
 from sklearn import datasets
-from sklearn import preprocessing
-from sklearn.base import BaseEstimator, clone
+from sklearn.base import clone
 from sklearn.compose import make_column_selector
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
@@ -278,7 +276,6 @@ def test_dag_stacking_pca_svm_rf(idx):
             assert hasattr(dag, attr)
 
 
-
 def test_dag_draw():
     txt = DAGBuilder().make_dag().draw(format="txt")
     assert "[empty]" in txt
@@ -295,11 +292,47 @@ def test_dag_draw():
     dag = (
         DAGBuilder()
         .add_step("pca", pca)
-        .add_step("svc", svc, deps=["pca"])
-        .add_step("rf", rf, deps=["pca"])
-        .add_step("log", log, deps=["svc", "rf"])
+        .add_step("svc1", svc, deps={"pca": slice(4)})
+        .add_step("svc2", svc, deps={"pca": [0, 1, 2]})
+        .add_step(
+            "svc3", svc, deps={"pca": lambda X: [c for c in X if c.startswith("foo")]}
+        )
+        .add_step("rf1", rf, deps={"pca": [0, 1, 2, 3, 4, 5, 6, 7, 8]})
+        .add_step("rf2", rf, deps={"pca": make_column_selector(pattern="^pca.*")})
+        .add_step("log", log, deps=["svc1", "svc2", "rf1", "rf2"])
         .make_dag()
     )
+
+    for repr_method in [fn for fn in dir(dag) if fn.startswith("_repr_")]:
+        if repr_method == "_repr_pretty_":
+            try:
+                from IPython.lib.pretty import PrettyPrinter
+            except ImportError:  # pragma: no cover
+                continue
+            from io import StringIO
+
+            sio = StringIO()
+            getattr(dag, repr_method)(PrettyPrinter(sio), False)
+            sio.seek(0)
+            out = sio.read()
+        else:
+            out = getattr(dag, repr_method)()
+
+        if repr_method == "_repr_mimebundle_":
+            for mimetype, data in out.items():
+                if mimetype in ("image/png", "image/jpeg"):
+                    expected = bytes
+                else:
+                    expected = str
+                assert isinstance(
+                    data, expected
+                ), f"{repr_method} {mimetype} returns unexpected type {data}"
+        elif repr_method in ("_repr_jpeg_", "_repr_png_"):
+            assert isinstance(
+                out, bytes
+            ), f"{repr_method} returns unexpected type {out}"
+        else:
+            assert isinstance(out, str), f"{repr_method} returns unexpected type {out}"
 
     txt = dag.draw(format="txt")
     for step in dag.step_names:
@@ -394,7 +427,10 @@ def test_pandas_indexing():
     X_tr = preprocessing.fit_transform(X, y)
     assert isinstance(X_tr, pd.DataFrame)
     assert (X_tr.index == X.index).all()
-    assert X_tr.columns.tolist() == passcols + ["blood0", "blood1"]
+    assert X_tr.columns.tolist() == [f"imp__{col}" for col in passcols] + [
+        "blood__pca0",
+        "blood__pca1",
+    ]
 
     predictor = (
         DAGBuilder(infer_dataframe=True)
