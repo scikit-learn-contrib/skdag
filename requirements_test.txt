@@ -1,2 +1,3 @@
+pandas
 pytest
 pytest-cov

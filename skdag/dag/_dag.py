@@ -14,7 +14,9 @@ from joblib import Parallel, delayed
 from scipy.sparse import dok_matrix, issparse
 from skdag.dag._render import DAGRenderer
 from skdag.dag._utils import (
+    _format_output,
     _in_notebook,
+    _is_pandas,
     _is_passthrough,
     _is_predictor,
     _is_transformer,
@@ -22,7 +24,7 @@ from skdag.dag._utils import (
 )
 from sklearn.base import clone
 from sklearn.exceptions import NotFittedError
-from sklearn.utils import Bunch, _print_elapsed_time, _safe_indexing
+from sklearn.utils import Bunch, _print_elapsed_time, _safe_indexing, deprecated
 from sklearn.utils._tags import _safe_tags
 from sklearn.utils.metaestimators import _BaseComposition, available_if
 from sklearn.utils.validation import check_is_fitted, check_memory
@@ -34,7 +36,10 @@ def _stack_inputs(dag, X, node):
     # For root nodes, the dependency is just the node name itself.
     deps = {node.name: None} if node.is_root else node.deps
 
-    cols = [_safe_indexing(X[dep], deps[dep], axis=1) for dep in deps]
+    cols = [
+        X[dep][cols(X[dep])] if callable(cols) else _safe_indexing(X[dep], cols, axis=1)
+        for dep, cols in deps.items()
+    ]
 
     to_stack = [
         # If we sliced a single column from an input, reshape it to a 2d array.
@@ -47,6 +52,31 @@ def _stack_inputs(dag, X, node):
     X_stacked = _stack(to_stack, axis=node.axis)
 
     return X_stacked
+
+
+def _leaf_estimators_have(attr, how="all"):
+    """Check that leaves have `attr`.
+    Used together with `avaliable_if` in `DAG`."""
+
+    def check_leaves(self):
+        # raises `AttributeError` with all details if `attr` does not exist
+        failed = []
+        for leaf in self.leaves_:
+            try:
+                _is_passthrough(leaf.estimator) or getattr(leaf.estimator, attr)
+            except AttributeError:
+                failed.append(leaf.estimator)
+
+        if (how == "all" and failed) or (
+            how == "any" and len(failed) != len(self.leaves_)
+        ):
+            raise AttributeError(
+                f"{', '.join([repr(type(est)) for est in failed])} "
+                f"object(s) has no attribute '{attr}'"
+            )
+        return True
+
+    return check_leaves
 
 
 def _transform_one(transformer, X, weight, allow_predictor=True, **fit_params):
@@ -66,9 +96,10 @@ def _transform_one(transformer, X, weight, allow_predictor=True, **fit_params):
     else:
         res = transformer.transform(X)
     # if we have a weight for this transformer, multiply output
-    if weight is None:
-        return res
-    return res * weight
+    if weight is not None:
+        res = res * weight
+
+    return res
 
 
 def _fit_transform_one(
@@ -115,36 +146,10 @@ def _fit_transform_one(
                 f"'{type(transformer).__name__}' object has no attribute 'transform'"
             )
 
-    if weight is None:
-        return res, transformer
-    return res * weight, transformer
+    if weight is not None:
+        res = res * weight
 
-
-def _leaf_estimators_have(attr, how="all"):
-    """Check that leaves have `attr`.
-    Used together with `avaliable_if` in `DAG`."""
-
-    def check_leaves(self):
-        # raises `AttributeError` with all details if `attr` does not exist
-        failed = []
-        for leaf in self.leaves_:
-            try:
-                (_is_passthrough(leaf.estimator) and attr == "transform") or getattr(
-                    leaf.estimator, attr
-                )
-            except AttributeError:
-                failed.append(leaf.estimator)
-
-        if (how == "all" and failed) or (
-            how == "any" and len(failed) != len(self.leaves_)
-        ):
-            raise AttributeError(
-                f"{', '.join([repr(type(est)) for est in failed])} "
-                f"object(s) has no attribute '{attr}'"
-            )
-        return True
-
-    return check_leaves
+    return res, transformer
 
 
 def _parallel_fit(dag, step, Xin, Xs, y, fit_transform_fn, memory, **fit_params):
@@ -159,27 +164,29 @@ def _parallel_fit(dag, step, Xin, Xs, y, fit_transform_fn, memory, **fit_params)
         X = _stack_inputs(dag, Xin, step)
 
     clsname = type(dag).__name__
-    if transformer is None or transformer == "passthrough":
-        with _print_elapsed_time(clsname, dag._log_message(step)):
-            return X, transformer
+    with _print_elapsed_time(clsname, dag._log_message(step)):
+        if transformer is None or transformer == "passthrough":
+            Xt, fitted_transformer = X, transformer
+        else:
+            if hasattr(memory, "location") and memory.location is None:
+                # we do not clone when caching is disabled to
+                # preserve backward compatibility
+                cloned_transformer = transformer
+            else:
+                cloned_transformer = clone(transformer)
 
-    if hasattr(memory, "location") and memory.location is None:
-        # we do not clone when caching is disabled to
-        # preserve backward compatibility
-        cloned_transformer = transformer
-    else:
-        cloned_transformer = clone(transformer)
+            # Fit or load from cache the current transformer
+            Xt, fitted_transformer = fit_transform_fn(
+                cloned_transformer,
+                X,
+                y,
+                None,
+                message_clsname=clsname,
+                message=dag._log_message(step),
+                **fit_params,
+            )
 
-    # Fit or load from cache the current transformer
-    Xt, fitted_transformer = fit_transform_fn(
-        cloned_transformer,
-        X,
-        y,
-        None,
-        message_clsname=clsname,
-        message=dag._log_message(step),
-        **fit_params,
-    )
+    Xt = _format_output(Xt, X, step)
 
     return Xt, fitted_transformer
 
@@ -195,19 +202,21 @@ def _parallel_transform(dag, step, Xin, Xs, transform_fn, **fn_params):
         # X = Xin[step.name]
 
     clsname = type(dag).__name__
-    if transformer is None or transformer == "passthrough":
-        with _print_elapsed_time(clsname, dag._log_message(step)):
-            return X
+    with _print_elapsed_time(clsname, dag._log_message(step)):
+        if transformer is None or transformer == "passthrough":
+                Xt = X
+        else:
+            # Fit or load from cache the current transformer
+            Xt = transform_fn(
+                transformer,
+                X,
+                None,
+                message_clsname=clsname,
+                message=dag._log_message(step),
+                **fn_params,
+            )
 
-    # Fit or load from cache the current transformer
-    Xt = transform_fn(
-        transformer,
-        X,
-        None,
-        message_clsname=clsname,
-        message=dag._log_message(step),
-        **fn_params,
-    )
+    Xt = _format_output(Xt, X, step)
 
     return Xt
 
@@ -244,7 +253,10 @@ def _parallel_execute(
             else:
                 Xout = est_fn(Xt, **fn_params)
 
+        Xout = _format_output(Xout, Xt, leaf)
+
     fitted_estimator = leaf.estimator
+
     return Xout, fitted_estimator
 
 
@@ -261,6 +273,14 @@ class DAGStep:
     deps : dict
         A map of dependency names to columns. If columns is ``None``, then all input
         columns will be selected.
+    dataframe_columns : list of str or "infer" (optional)
+        Either a hard-coded list of column names to apply to any output data, or the
+        string "infer", which means the column outputs will be assumed to match the
+        column inputs if the output is 2d and not already a dataframe, the estimator is
+        a transformer, and the final axis dimensions match the inputs. Otherwise the
+        column names will be assumed to be the step name + index if the output is not
+        already a dataframe. If set to ``None`` or inference is not possible, the
+        outputs will be left unmodified.
     axis : int, default = 1
         The strategy for merging inputs if there is more than upstream dependency.
         ``axis=0`` will assume all inputs have the same features and stack the rows
@@ -268,10 +288,11 @@ class DAGStep:
         same samples.
     """
 
-    def __init__(self, name, estimator, deps, axis=1):
+    def __init__(self, name, estimator, deps, dataframe_columns, axis=1):
         self.name = name
         self.estimator = estimator
         self.deps = deps
+        self.dataframe_columns = dataframe_columns
         self.axis = axis
         self.index = None
         self.is_root = False
@@ -428,49 +449,14 @@ class DAG(_BaseComposition):
     _required_parameters = ["graph"]
 
     @classmethod
+    @deprecated(
+        "DAG.from_pipeline is deprecated in 0.0.3 and will be removed in a future "
+        "release. Please use DAGBuilder.from_pipeline instead."
+    )
     def from_pipeline(cls, steps, **kwargs):
-        """
-        Construct a DAG from a simple linear sequence of steps. The resulting DAG will
-        be equivalent to a :class:`~sklearn.pipeline.Pipeline`.
+        from skdag.dag._builder import DAGBuilder
 
-        Parameters
-        ----------
-
-        steps : sequence of (str, estimator)
-            An ordered sequence of pipeline steps. A step is simply a pair of
-            ``(name, estimator)``, just like a scikit-learn Pipeline.
-
-        kwargs : kwargs
-            Any other hyperparameters that are accepted by :class:`~skdag.dag.DAG`'s
-            contructor.
-        """
-        graph = nx.DiGraph()
-        if hasattr(steps, "steps"):
-            pipe = steps
-            steps = pipe.steps
-            if hasattr(pipe, "get_params"):
-                kwargs = {
-                    **{
-                        k: v
-                        for k, v in pipe.get_params().items()
-                        if k in ("memory", "verbose")
-                    },
-                    **kwargs,
-                }
-
-        for i in range(len(steps)):
-            name, estimator = steps[i]
-            deps = {}
-            if i > 0:
-                dep = steps[i - 1][0]
-                deps[dep] = None
-
-            step = DAGStep(name, estimator, deps)
-            graph.add_node(name, step=step)
-            if deps:
-                graph.add_edge(dep, name)
-
-        return cls(graph=graph, **kwargs)
+        return DAGBuilder().from_pipeline(steps, **kwargs).make_dag()
 
     def __init__(self, graph, *, memory=None, n_jobs=None, verbose=False):
         self.graph = graph
@@ -672,7 +658,10 @@ class DAG(_BaseComposition):
                 )
             X = {self.roots_[0].name: X}
 
-        X = {step: x if issparse(x) else np.asarray(x) for step, x in X.items()}
+        X = {
+            step: x if issparse(x) or _is_pandas(x) else np.asarray(x)
+            for step, x in X.items()
+        }
 
         return X
 
@@ -1240,21 +1229,27 @@ class DAG(_BaseComposition):
             if v not in other.graph_:
                 raise KeyError(v)
 
-            attrs = other.graph_.nodes[v]
-            old_step = attrs["step"]
-            step = DAGStep(
+            # source node can no longer be a leaf
+            ustep = newgraph.nodes[u]["step"]
+            if ustep.is_leaf:
+                ustep.is_leaf = False
+
+            vnode = other.graph_.nodes[v]
+            old_step = vnode["step"]
+            vstep = DAGStep(
                 name=old_step.name,
                 estimator=old_step.estimator,
                 deps=old_step.deps,
+                dataframe_columns=old_step.dataframe_columns,
                 axis=old_step.axis,
             )
 
-            if u not in step.deps:
-                step.deps[u] = idx
+            if u not in vstep.deps:
+                vstep.deps[u] = idx
 
-            attrs["step"] = step
+            vnode["step"] = vstep
 
-            newgraph.add_node(v, **attrs)
+            newgraph.add_node(v, **vnode)
             newgraph.add_edge(u, v)
 
         return DAG(newgraph, **kwargs)
@@ -1346,6 +1341,7 @@ class DAG(_BaseComposition):
         """
         if format is None:
             format = "svg" if _in_notebook() else "txt"
+
         data = self.draw(style=style, detailed=detailed, format=format, layout=layout)
         if format == "svg":
             from IPython.display import SVG, display

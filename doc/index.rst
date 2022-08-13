@@ -13,24 +13,28 @@ cases including complex pre-processing, model stacking and benchmarking.
    from skdag import DAGBuilder
 
    dag = (
-      DAGBuilder()
+      DAGBuilder(infer_dataframe=True)
       .add_step("impute", SimpleImputer())
-      .add_step("vitals", "passthrough", deps={"impute": slice(0, 4)})
+      .add_step(
+         "vitals",
+         "passthrough",
+         deps={"impute": ["age", "sex", "bmi", "bp"]},
+      )
       .add_step(
          "blood",
          PCA(n_components=2, random_state=0),
-         deps={"impute": slice(4, 10)}
+         deps={"impute": ["s1", "s2", "s3", "s4", "s5", "s6"]},
       )
       .add_step(
          "rf",
          RandomForestRegressor(max_depth=5, random_state=0),
-         deps=["blood", "vitals"]
+         deps=["blood", "vitals"],
       )
       .add_step("svm", SVR(C=0.7), deps=["blood", "vitals"])
       .add_step(
          "knn",
          KNeighborsRegressor(n_neighbors=5),
-         deps=["blood", "vitals"]
+         deps=["blood", "vitals"],
       )
       .add_step("meta", LinearRegression(), deps=["rf", "svm", "knn"])
       .make_dag(n_jobs=2, verbose=True)
