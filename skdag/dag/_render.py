@@ -141,7 +141,7 @@ class DAGRenderer:
                         )
                         colrepr = f"column_selector({selrepr})"
                     else:
-                        colrepr = f"{cols.__name__}()"
+                        colrepr = f"{selector.__name__}()"
                 else:
                     colrepr = repr(cols)
 

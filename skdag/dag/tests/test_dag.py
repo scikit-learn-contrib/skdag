@@ -292,10 +292,14 @@ def test_dag_draw():
     dag = (
         DAGBuilder()
         .add_step("pca", pca)
-        .add_step("svc", svc, deps={"pca": slice(4)})
-        .add_step("rf1", rf, deps={"pca": [0, 1, 2]})
+        .add_step("svc1", svc, deps={"pca": slice(4)})
+        .add_step("svc2", svc, deps={"pca": [0, 1, 2]})
+        .add_step(
+            "svc3", svc, deps={"pca": lambda X: [c for c in X if c.startswith("foo")]}
+        )
+        .add_step("rf1", rf, deps={"pca": [0, 1, 2, 3, 4, 5, 6, 7, 8]})
         .add_step("rf2", rf, deps={"pca": make_column_selector(pattern="^pca.*")})
-        .add_step("log", log, deps=["svc", "rf1", "rf2"])
+        .add_step("log", log, deps=["svc1", "svc2", "rf1", "rf2"])
         .make_dag()
     )
 
