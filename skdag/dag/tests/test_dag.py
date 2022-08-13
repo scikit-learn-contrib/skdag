@@ -2,16 +2,14 @@
 Test the DAG module.
 """
 import re
-import time
 
 import numpy as np
 import pandas as pd
 import pytest
-from skdag import DAG, DAGBuilder
+from skdag import DAGBuilder
 from skdag.dag.tests.utils import FitParamT, Mult, NoFit, NoTrans, Transf
 from sklearn import datasets
-from sklearn import preprocessing
-from sklearn.base import BaseEstimator, clone
+from sklearn.base import clone
 from sklearn.compose import make_column_selector
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
@@ -294,9 +292,10 @@ def test_dag_draw():
     dag = (
         DAGBuilder()
         .add_step("pca", pca)
-        .add_step("svc", svc, deps=["pca"])
-        .add_step("rf", rf, deps=["pca"])
-        .add_step("log", log, deps=["svc", "rf"])
+        .add_step("svc", svc, deps={"pca": slice(4)})
+        .add_step("rf1", rf, deps={"pca": [0, 1, 2]})
+        .add_step("rf2", rf, deps={"pca": make_column_selector(pattern="^pca.*")})
+        .add_step("log", log, deps=["svc", "rf1", "rf2"])
         .make_dag()
     )
 
