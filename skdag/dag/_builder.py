@@ -16,6 +16,15 @@ class DAGBuilder:
     that reference each step by name. Note that steps must be defined before they are
     used as dependencies.
 
+    Parameters
+    ----------
+
+    infer_dataframe : bool, default = False
+        If True, assume ``dataframe_columns="infer"`` every time :meth:`.add_step` is
+        called, if ``dataframe_columns`` is set to ``None``. This effectively makes the
+        resulting DAG always try to coerce output into pandas DataFrames wherever
+        possible.
+
     See Also
     --------
     :class:`skdag.DAG` : The estimator DAG created by this utility.
@@ -43,10 +52,66 @@ class DAGBuilder:
     o    lr
     """
 
-    def __init__(self):
+    def __init__(self, infer_dataframe=False):
         self.graph = nx.DiGraph()
+        self.infer_dataframe = infer_dataframe
 
-    def add_step(self, name, est, deps=None):
+    def from_pipeline(self, steps, **kwargs):
+        """
+        Construct a DAG from a simple linear sequence of steps. The resulting DAG will
+        be equivalent to a :class:`~sklearn.pipeline.Pipeline`.
+
+        Parameters
+        ----------
+
+        steps : sequence of (str, estimator)
+            An ordered sequence of pipeline steps. A step is simply a pair of
+            ``(name, estimator)``, just like a scikit-learn Pipeline.
+
+        infer_dataframe : bool, default = False
+            If True, assume ``dataframe_columns="infer"`` every time :meth:`.add_step`
+            is called, if ``dataframe_columns`` is set to ``None``. This effectively
+            makes the resulting DAG always try to coerce output into pandas DataFrames
+            wherever possible.
+
+        kwargs : kwargs
+            Any other hyperparameters that are accepted by :class:`~skdag.dag.DAG`'s
+            contructor.
+        """
+        if hasattr(steps, "steps"):
+            pipe = steps
+            steps = pipe.steps
+            if hasattr(pipe, "get_params"):
+                kwargs = {
+                    **{
+                        k: v
+                        for k, v in pipe.get_params().items()
+                        if k in ("memory", "verbose")
+                    },
+                    **kwargs,
+                }
+
+        dfcols = "infer" if self.infer_dataframe else None
+
+        for i in range(len(steps)):
+            name, estimator = steps[i]
+            self._validate_name(name)
+            deps = {}
+            if i > 0:
+                dep = steps[i - 1][0]
+                deps[dep] = None
+            self._validate_deps(deps)
+
+            step = DAGStep(name, estimator, deps, dataframe_columns=dfcols)
+            self.graph.add_node(name, step=step)
+            if deps:
+                self.graph.add_edge(dep, name)
+
+        self._validate_graph()
+
+        return self
+
+    def add_step(self, name, est, deps=None, dataframe_columns=None):
         self._validate_name(name)
         if isinstance(deps, Sequence):
             deps = {dep: None for dep in deps}
@@ -56,7 +121,12 @@ class DAGBuilder:
         else:
             deps = {}
 
-        step = DAGStep(name, est, deps=deps)
+        if dataframe_columns is None and self.infer_dataframe:
+            dfcols = "infer"
+        else:
+            dfcols = dataframe_columns
+
+        step = DAGStep(name, est, deps=deps, dataframe_columns=dfcols)
         self.graph.add_node(name, step=step)
 
         for dep in deps:

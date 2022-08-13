@@ -50,31 +50,34 @@ For more complex DAGs, it is recommended to use a :class:`skdag.dag.DAGBuilder`,
 which allows you to define the graph by specifying the dependencies of each new
 estimator:
 
->>> from skdag import DAGBuilder
->>> dag = (
-...     DAGBuilder()
-...     .add_step("impute", SimpleImputer())
-...     .add_step("vitals", "passthrough", deps={"impute": slice(0, 4)})
-...     .add_step("blood", PCA(n_components=2, random_state=0), deps={"impute": slice(4, 10)})
-...     .add_step("lr", LogisticRegression(random_state=0), deps=["blood", "vitals"])
-...     .make_dag()
-... )
->>> dag.draw()
-o    impute
-|\
-o o    blood,vitals
-|/
-o    lr
-<BLANKLINE>
+.. code-block:: python
+
+    >>> from skdag import DAGBuilder
+    >>> dag = (
+    ...     DAGBuilder(infer_dataframe=True)
+    ...     .add_step("impute", SimpleImputer())
+    ...     .add_step("vitals", "passthrough", deps={"impute": ["age", "sex", "bmi", "bp"]})
+    ...     .add_step("blood", PCA(n_components=2, random_state=0), deps={"impute": slice(4, 10)})
+    ...     .add_step("lr", LogisticRegression(random_state=0), deps=["blood", "vitals"])
+    ...     .make_dag()
+    ... )
+    >>> dag.draw()
+    o    impute
+    |\
+    o o    blood,vitals
+    |/
+    o    lr
+    <BLANKLINE>
 
 .. image:: _static/img/dag2.png
 
 In the above examples we pass the first four columns directly to a regressor, but
 the remaining columns have dimensionality reduction applied first before being
-passed to the same regressor as extra input columns. Note that we can define our graph
-edges in two different ways: as a dict (if we need to select only certain columns from
-the source node) or as a simple list (if we want to simply grab all columns from all
-input nodes).
+passed to the same regressor as extra input columns.
+
+In this DAG, as well as using the ``deps`` option to control which estimators feed in to
+other estimators, but which columns are used (and ignored) by each step. For more detail
+on how to control this behaviour, see the `User Guide <user_guide.html>`_.
 
 The DAG may now be used as an estimator in its own right:
 

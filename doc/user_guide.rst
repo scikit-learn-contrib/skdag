@@ -26,7 +26,8 @@ scikit-learn :class:`~sklearn.pipeline.Pipeline`. These DAGs may be created from
     ...         ("impute", SimpleImputer()),
     ...         ("pca", PCA()),
     ...         ("lr", LogisticRegression())
-    ...     ]
+    ...     ],
+    ...     infer_dataframe=True,
     ... )
 
 You may view a diagram of the DAG with the :meth:`~skdag.dag.DAG.show` method. In a
@@ -44,6 +45,12 @@ ASCII text:
 
 .. image:: _static/img/dag1.png
 
+Note that we also provided an extra option, ``infer_dataframe``. This is entirely
+optional, but if set the DAG will ensure that dataframe inputs have column and index
+information preserved (or inferred), and the output of the pipeline will also be a
+dataframe. This is useful if you wish to filter down the inputs for one particular step
+to only include certain columns; something we shall see in action later.
+
 For more complex DAGs, it is recommended to use a :class:`skdag.dag.DAGBuilder`,
 which allows you to define the graph by specifying the dependencies of each new
 estimator:
@@ -51,11 +58,12 @@ estimator:
 .. code-block:: python
 
     >>> from skdag import DAGBuilder
+    >>> from sklearn.compose import make_column_selector
     >>> dag = (
-    ...     DAGBuilder()
+    ...     DAGBuilder(infer_dataframe=True)
     ...     .add_step("impute", SimpleImputer())
-    ...     .add_step("vitals", "passthrough", deps={"impute": slice(0, 4)})
-    ...     .add_step("blood", PCA(n_components=2, random_state=0), deps={"impute": slice(4, 10)})
+    ...     .add_step("vitals", "passthrough", deps={"impute": ["age", "sex", "bmi", "bp"]})
+    ...     .add_step("blood", PCA(n_components=2, random_state=0), deps={"impute": make_column_selector("s[0-9]+")})
     ...     .add_step("lr", LogisticRegression(random_state=0), deps=["blood", "vitals"])
     ...     .make_dag()
     ... )
@@ -73,7 +81,16 @@ the remaining columns have dimensionality reduction applied first before being
 passed to the same regressor. Note that we can define our graph edges in two
 different ways: as a dict (if we need to select only certain columns from the source
 node) or as a simple list (if we want to simply grab all columns from all input
-nodes).
+nodes). Columns may be specified as any kind of iterable (list, slice etc.) or a column
+selector function that conforms to :meth:`sklearn.compose.make_column_selector`.
+
+If you wish to specify string column names for dependencies, ensure you provide the
+``infer_dataframe=True`` option when you create a dag. This will ensure that all
+estimator outputs are coerced into dataframes. Where possible column names will be
+inferred, otherwise the column names will just be the name of the estimator step with an
+appended index number. If you do not specify ``infer_dataframe=True``, the dag will
+leave the outputs unmodified, which in most cases will mean numpy arrays that only
+support numeric column indices.
 
 The DAG may now be used as an estimator in its own right:
 
@@ -189,7 +206,7 @@ as a dictionary of step name to column indices instead:
     >>> from sklearn.ensemble import RandomForestClassifier
     >>> from sklearn.svm import SVC
     >>> clf_stack = (
-    ...     DAGBuilder()
+    ...     DAGBuilder(infer_dataframe=True)
     ...     .add_step("pass", "passthrough")
     ...     .add_step("rf", RandomForestClassifier(), deps=["pass"])
     ...     .add_step("svr", SVC(), deps=["pass"])

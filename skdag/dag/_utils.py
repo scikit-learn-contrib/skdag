@@ -1,6 +1,11 @@
 import numpy as np
 from scipy import sparse
 
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
 
 def _is_passthrough(estimator):
     return estimator is None or estimator == "passthrough"
@@ -39,7 +44,7 @@ def _stack(Xs, axis=0):
     hstack (combination of features). Higher axes are only supported for non-sparse
     data sources.
     """
-    if any(sparse.issparse(f) for f in Xs):
+    if any(sparse.issparse(x) for x in Xs):
         if -2 <= axis < 2:
             axis = axis % 2
         else:
@@ -51,6 +56,8 @@ def _stack(Xs, axis=0):
             Xs = sparse.vstack(Xs).tocsr()
         elif axis == 1:
             Xs = sparse.hstack(Xs).tocsr()
+    elif pd and all(_is_pandas(x) for x in Xs):
+        Xs = pd.concat(Xs, axis=axis)
     else:
         if axis == 1:
             Xs = np.hstack(Xs)
@@ -58,3 +65,53 @@ def _stack(Xs, axis=0):
             Xs = np.stack(Xs, axis=axis)
 
     return Xs
+
+
+def _is_pandas(X):
+    "Check if X is a DataFrame or Series"
+    return hasattr(X, "iloc")
+
+
+def _format_output(X, input, node):
+    outdim = np.asarray(X).ndim
+    if (
+        outdim > 2
+        or outdim < 1
+        or node.dataframe_columns is None
+        or pd is None
+        or _is_pandas(X)
+    ):
+        return X
+    else:
+        inshape = np.asarray(input).shape
+        outshape = np.asarray(X).shape
+        indim = np.asarray(input).ndim
+        if node.dataframe_columns == "infer":
+            if (
+                hasattr(node.estimator, "transform")
+                and (
+                    (inshape == outshape)
+                    or (indim > 1 and outdim > 1 and inshape[1] == outshape[1])
+                )
+                and hasattr(input, "columns")
+            ):
+                columns = input.columns
+            else:
+                if outdim == 1:
+                    columns = [node.name]
+                else:
+                    columns = [f"{node.name}{i}" for i in range(outshape[1])]
+        else:
+            columns = node.dataframe_columns
+
+        if hasattr(input, "index"):
+            index = input.index
+        else:
+            index = None
+
+        if outdim == 2:
+            df = pd.DataFrame(X, columns=columns, index=index)
+        else:
+            df = pd.Series(X, name=columns[0], index=index)
+
+        return df
