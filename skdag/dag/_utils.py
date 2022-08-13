@@ -72,46 +72,47 @@ def _is_pandas(X):
     return hasattr(X, "iloc")
 
 
+def _get_feature_names(estimator):
+    try:
+        feature_names = estimator.get_feature_names_out()
+    except AttributeError:
+        try:
+            feature_names = estimator.get_feature_names()
+        except AttributeError:
+            feature_names = None
+
+    return feature_names
+
+
 def _format_output(X, input, node):
-    outdim = np.asarray(X).ndim
-    if (
-        outdim > 2
-        or outdim < 1
-        or node.dataframe_columns is None
-        or pd is None
-        or _is_pandas(X)
-    ):
+    if node.dataframe_columns is None or pd is None or _is_pandas(X):
         return X
+
+    outshape = np.asarray(X).shape
+    outdim = len(outshape)
+    if outdim > 2 or outdim < 1:
+        return X
+
+    if node.dataframe_columns == "infer":
+        if outdim == 1:
+            columns = [node.name]
+        else:
+            feature_names = _get_feature_names(node.estimator)
+            if feature_names is None:
+                feature_names = range(outshape[1])
+
+            columns = [f"{node.name}__{f}" for f in feature_names]
     else:
-        inshape = np.asarray(input).shape
-        outshape = np.asarray(X).shape
-        indim = np.asarray(input).ndim
-        if node.dataframe_columns == "infer":
-            if (
-                hasattr(node.estimator, "transform")
-                and (
-                    (inshape == outshape)
-                    or (indim > 1 and outdim > 1 and inshape[1] == outshape[1])
-                )
-                and hasattr(input, "columns")
-            ):
-                columns = input.columns
-            else:
-                if outdim == 1:
-                    columns = [node.name]
-                else:
-                    columns = [f"{node.name}{i}" for i in range(outshape[1])]
-        else:
-            columns = node.dataframe_columns
+        columns = node.dataframe_columns
 
-        if hasattr(input, "index"):
-            index = input.index
-        else:
-            index = None
+    if hasattr(input, "index"):
+        index = input.index
+    else:
+        index = None
 
-        if outdim == 2:
-            df = pd.DataFrame(X, columns=columns, index=index)
-        else:
-            df = pd.Series(X, name=columns[0], index=index)
+    if outdim == 2:
+        df = pd.DataFrame(X, columns=columns, index=index)
+    else:
+        df = pd.Series(X, name=columns[0], index=index)
 
-        return df
+    return df

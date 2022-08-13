@@ -18,17 +18,17 @@ scikit-learn :class:`~sklearn.pipeline.Pipeline`. These DAGs may be created from
 
 .. code-block:: python
 
+    >>> from skdag import DAGBuilder
     >>> from sklearn.decomposition import PCA
     >>> from sklearn.impute import SimpleImputer
     >>> from sklearn.linear_model import LogisticRegression
-    >>> dag = DAG.from_pipeline(
+    >>> dag = DAGBuilder(infer_dataframe=True).from_pipeline(
     ...     steps=[
     ...         ("impute", SimpleImputer()),
     ...         ("pca", PCA()),
     ...         ("lr", LogisticRegression())
-    ...     ],
-    ...     infer_dataframe=True,
-    ... )
+    ...     ]
+    ... ).make_dag()
 
 You may view a diagram of the DAG with the :meth:`~skdag.dag.DAG.show` method. In a
 notbook environment this will display an image, whereas in a terminal it will generate
@@ -97,9 +97,10 @@ The DAG may now be used as an estimator in its own right:
 .. code-block:: python
 
     >>> from sklearn import datasets
-    >>> X, y = datasets.load_diabetes(return_X_y=True)
-    >>> dag.fit_predict(X, y)
-    array([...
+    >>> X, y = datasets.load_diabetes(return_X_y=True, as_frame=True)
+    >>> y_hat = dag.fit_predict(X, y)
+    >>> type(y_hat)
+    <class 'pandas.core.series.Series'>
 
 In an extension to the scikit-learn estimator interface, DAGs also support multiple
 inputs and multiple outputs. Let's say we want to compare two different classifiers:
@@ -107,9 +108,9 @@ inputs and multiple outputs. Let's say we want to compare two different classifi
 .. code-block:: python
 
     >>> from sklearn.ensemble import RandomForestClassifier
-    >>> rf = DAG.from_pipeline(
+    >>> rf = DAGBuilder().from_pipeline(
     ...     [("rf", RandomForestClassifier(random_state=0))]
-    ... )
+    ... ).make_dag()
     >>> dag2 = dag.join(rf, edges=[("blood", "rf"), ("vitals", "rf")])
     >>> dag2.show()
     o    impute
@@ -126,10 +127,14 @@ returned as a :class:`sklearn.utils.Bunch<Bunch>`:
 .. code-block:: python
 
     >>> y_pred = dag2.fit_predict(X, y)
-    >>> y_pred.lr
-    array([...
-    >>> y_pred.rf
-    array([...
+    >>> type(y_pred.lr)
+    <class 'pandas.core.series.Series'>
+    >>> type(y_pred.rf)
+    <class 'numpy.ndarray'>
+
+Note that we have different types of output here because ``LogisticRegression`` natively
+supports dataframe input whereas ``RandomForestClassifier`` does not. We could fix this
+by specifying ``infer_dataframe=True`` when we createed our ``rf`` DAG extension.
 
 Similarly, multiple inputs are also acceptable and inputs can be provided by
 specifying ``X`` and ``y`` as ``dict``-like objects.
@@ -174,6 +179,7 @@ the next step(s).
     ...     .make_dag()
     ... )
     >>> stack.fit(X_train, y_train)
+    DAG(...
 
 .. image:: _static/img/stack.png
 
@@ -210,7 +216,7 @@ as a dictionary of step name to column indices instead:
     ...     .add_step("pass", "passthrough")
     ...     .add_step("rf", RandomForestClassifier(), deps=["pass"])
     ...     .add_step("svr", SVC(), deps=["pass"])
-    ...     .add_step("meta", LinearRegression(), deps={"rf": 1, "svc": 1}])
+    ...     .add_step("meta", LinearRegression(), deps={"rf": 1, "svr": 1})
     ...     .make_dag()
     ... )
 

@@ -7,6 +7,7 @@ from collections import UserDict
 from copy import deepcopy
 from inspect import signature
 from itertools import chain
+from typing import Iterable
 
 import networkx as nx
 import numpy as np
@@ -32,12 +33,34 @@ from sklearn.utils.validation import check_is_fitted, check_memory
 __all__ = ["DAG", "DAGStep"]
 
 
+def _get_columns(X, dep, cols, is_root, axis=1):
+    if callable(cols):
+        # sklearn.compose.make_column_selector
+        cols = cols(X)
+
+    if not is_root:
+        # The DAG will prepend output columns with the step name, so add this in to any
+        # dep columns if missing. This helps keep user-provided deps readable.
+        if isinstance(cols, str):
+            cols = cols if cols.startswith(f"{dep}__") else f"{dep}__{cols}"
+        elif isinstance(cols, Iterable):
+            orig = cols
+            cols = []
+            for col in orig:
+                if isinstance(col, str):
+                    cols.append(col if col.startswith(f"{dep}__") else f"{dep}__{col}")
+                else:
+                    cols.append(col)
+
+    return _safe_indexing(X, cols, axis=axis)
+
+
 def _stack_inputs(dag, X, node):
     # For root nodes, the dependency is just the node name itself.
     deps = {node.name: None} if node.is_root else node.deps
 
     cols = [
-        X[dep][cols(X[dep])] if callable(cols) else _safe_indexing(X[dep], cols, axis=1)
+        _get_columns(X[dep], dep, cols, node.is_root, axis=1)
         for dep, cols in deps.items()
     ]
 
@@ -204,7 +227,7 @@ def _parallel_transform(dag, step, Xin, Xs, transform_fn, **fn_params):
     clsname = type(dag).__name__
     with _print_elapsed_time(clsname, dag._log_message(step)):
         if transformer is None or transformer == "passthrough":
-                Xt = X
+            Xt = X
         else:
             # Fit or load from cache the current transformer
             Xt = transform_fn(

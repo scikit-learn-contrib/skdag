@@ -278,7 +278,6 @@ def test_dag_stacking_pca_svm_rf(idx):
             assert hasattr(dag, attr)
 
 
-
 def test_dag_draw():
     txt = DAGBuilder().make_dag().draw(format="txt")
     assert "[empty]" in txt
@@ -300,6 +299,37 @@ def test_dag_draw():
         .add_step("log", log, deps=["svc", "rf"])
         .make_dag()
     )
+
+    for repr_method in [fn for fn in dir(dag) if fn.startswith("_repr_")]:
+        if repr_method == "_repr_pretty_":
+            try:
+                from IPython.lib.pretty import PrettyPrinter
+            except ImportError:  # pragma: no cover
+                continue
+            from io import StringIO
+
+            sio = StringIO()
+            getattr(dag, repr_method)(PrettyPrinter(sio), False)
+            sio.seek(0)
+            out = sio.read()
+        else:
+            out = getattr(dag, repr_method)()
+
+        if repr_method == "_repr_mimebundle_":
+            for mimetype, data in out.items():
+                if mimetype in ("image/png", "image/jpeg"):
+                    expected = bytes
+                else:
+                    expected = str
+                assert isinstance(
+                    data, expected
+                ), f"{repr_method} {mimetype} returns unexpected type {data}"
+        elif repr_method in ("_repr_jpeg_", "_repr_png_"):
+            assert isinstance(
+                out, bytes
+            ), f"{repr_method} returns unexpected type {out}"
+        else:
+            assert isinstance(out, str), f"{repr_method} returns unexpected type {out}"
 
     txt = dag.draw(format="txt")
     for step in dag.step_names:
@@ -394,7 +424,10 @@ def test_pandas_indexing():
     X_tr = preprocessing.fit_transform(X, y)
     assert isinstance(X_tr, pd.DataFrame)
     assert (X_tr.index == X.index).all()
-    assert X_tr.columns.tolist() == passcols + ["blood0", "blood1"]
+    assert X_tr.columns.tolist() == [f"imp__{col}" for col in passcols] + [
+        "blood__pca0",
+        "blood__pca1",
+    ]
 
     predictor = (
         DAGBuilder(infer_dataframe=True)
