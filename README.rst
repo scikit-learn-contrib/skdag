@@ -31,7 +31,7 @@ including complex pre-processing, model stacking and benchmarking.
    from skdag import DAGBuilder
 
    dag = (
-      DAGBuilder()
+      DAGBuilder(infer_dataframe=True)
       .add_step("impute", SimpleImputer())
       .add_step("vitals", "passthrough", deps={"impute": ["age", "sex", "bmi", "bp"]})
       .add_step(
