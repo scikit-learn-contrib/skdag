@@ -14,3 +14,7 @@
 .deprecated p span.versionmodified {
     font-weight: bold;
 }
+
+img.logo {
+    max-height: 100px;
+}
