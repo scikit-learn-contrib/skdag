@@ -14,6 +14,8 @@
 skdag - A more flexible alternative to scikit-learn Pipelines
 =============================================================
 
+.. image:: img/skdag-banner.png
+
 scikit-dag (``skdag``) is an open-sourced, MIT-licenced library that provides advanced
 workflow management to any machine learning operations that follow
 scikit-learn_ conventions. Installation is simple:
