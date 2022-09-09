@@ -407,13 +407,20 @@ def test_pandas(X, y, steps):
     assert np.allclose(y_pred_np, y_pred_pd)
 
 
-def test_pandas_indexing():
+@pytest.mark.parametrize("input_passthrough", [False, True])
+def test_pandas_indexing(input_passthrough):
     X, y = datasets.load_diabetes(return_X_y=True, as_frame=True)
 
     passcols = ["age", "sex", "bmi", "bp"]
+
+    builder = DAGBuilder(infer_dataframe=True)
+    if input_passthrough:
+        builder.add_step("inp", "passthrough")
+
     preprocessing = (
-        DAGBuilder(infer_dataframe=True)
-        .add_step("imp", SimpleImputer())
+        builder.add_step(
+            "imp", SimpleImputer(), deps=["inp"] if input_passthrough else None
+        )
         .add_step("vitals", "passthrough", deps={"imp": passcols})
         .add_step(
             "blood",
