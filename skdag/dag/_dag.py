@@ -25,10 +25,15 @@ from skdag.dag._utils import (
 )
 from sklearn.base import clone
 from sklearn.exceptions import NotFittedError
-from sklearn.utils import Bunch, _print_elapsed_time, _safe_indexing, deprecated
+from sklearn.utils import Bunch, _safe_indexing, deprecated
 from sklearn.utils._tags import _safe_tags
 from sklearn.utils.metaestimators import _BaseComposition, available_if
 from sklearn.utils.validation import check_is_fitted, check_memory
+
+try:
+    from sklearn.utils import _print_elapsed_time
+except ImportError:
+    from sklearn.utils._user_interface import _print_elapsed_time
 
 __all__ = ["DAG", "DAGStep"]
 
