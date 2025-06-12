@@ -26,7 +26,6 @@ from skdag.dag._utils import (
 from sklearn.base import clone
 from sklearn.exceptions import NotFittedError
 from sklearn.utils import Bunch, _safe_indexing, deprecated
-from sklearn.utils._tags import _safe_tags
 from sklearn.utils.metaestimators import _BaseComposition, available_if
 from sklearn.utils.validation import check_is_fitted, check_memory
 
@@ -1484,17 +1483,17 @@ class DAG(_BaseComposition):
 
         # We assume the DAG can handle NaN if *all* the steps can.
         tags["allow_nan"] = all(
-            _safe_tags(node.estimator, "allow_nan") for node in self.nodes_
+            node.estimator._get_tags()["allow_nan"] for node in self.nodes_
         )
 
         # Check if all *root* nodes expect pairwise input.
         tags["pairwise"] = all(
-            _safe_tags(root.estimator, "pairwise") for root in self.roots_
+            root.estimator._get_tags()["pairwise"] for root in self.roots_
         )
 
-        # CHeck if all *leaf* notes support multioutput
+        # Check if all *leaf* notes support multioutput
         tags["multioutput"] = all(
-            _safe_tags(leaf.estimator, "multioutput") for leaf in self.leaves_
+            leaf.estimator._get_tags()["multioutput"] for leaf in self.leaves_
         )
 
         return tags
