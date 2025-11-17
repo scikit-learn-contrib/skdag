@@ -44,7 +44,7 @@ def _get_columns(X, dep, cols, is_root, dep_is_passthrough, axis=1):
         cols = cols(X)
 
     if not is_root and not dep_is_passthrough:
-        # The DAG will prepend output columns with the step name, so add this in to any
+        # The DAG will prepend output columns with the step name, so add this to any
         # dep columns if missing. This helps keep user-provided deps readable.
         if isinstance(cols, str):
             cols = cols if cols.startswith(f"{dep}__") else f"{dep}__{cols}"
@@ -91,7 +91,7 @@ def _stack_inputs(dag, X, node):
 
 def _leaf_estimators_have(attr, how="all"):
     """Check that leaves have `attr`.
-    Used together with `avaliable_if` in `DAG`."""
+    Used together with `available_if` in `DAG`."""
 
     def check_leaves(self):
         # raises `AttributeError` with all details if `attr` does not exist
@@ -312,7 +312,7 @@ class DAGStep:
         Either a hard-coded list of column names to apply to any output data, or the
         string "infer", which means the column outputs will be assumed to match the
         column inputs if the output is 2d and not already a dataframe, the estimator is
-        a transformer, and the final axis dimensions match the inputs. Otherwise the
+        a transformer, and the final axis dimensions match the inputs. Otherwise, the
         column names will be assumed to be the step name + index if the output is not
         already a dataframe. If set to ``None`` or inference is not possible, the
         outputs will be left unmodified.
@@ -568,7 +568,7 @@ class DAG(_BaseComposition):
                 stage = [
                     step
                     for step in stage
-                    if step.estimator is not None and step.estimator != "passthough"
+                    if step.estimator is not None and step.estimator != "passthrough"
                 ]
 
             if len(stage) == 0:
@@ -589,7 +589,7 @@ class DAG(_BaseComposition):
         return self.graph_.nodes[name]["step"].estimator
 
     def _fit(self, X, y=None, **fit_params_steps):
-        # Setup the memory
+        # Set up the memory
         memory = check_memory(self.memory)
 
         fit_transform_one_cached = memory.cache(_fit_transform_one)
@@ -639,7 +639,7 @@ class DAG(_BaseComposition):
         return Xs
 
     def _transform(self, X, **fn_params_steps):
-        # Setup the memory
+        # Set up the memory
         memory = check_memory(self.memory)
 
         transform_one_cached = memory.cache(_transform_one)

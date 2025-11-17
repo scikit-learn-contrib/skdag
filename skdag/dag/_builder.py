@@ -76,7 +76,7 @@ class DAGBuilder:
 
         kwargs : kwargs
             Any other hyperparameters that are accepted by :class:`~skdag.dag.DAG`'s
-            contructor.
+            constructor.
         """
         if hasattr(steps, "steps"):
             pipe = steps

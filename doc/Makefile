@@ -53,8 +53,8 @@ clean:
 	-rm -rf modules/generated/*
 
 html:
-	# These two lines make the build a bit more lengthy, and the
-	# the embedding of images more robust
+	# Make embedding of images more robust with a slight trade-off
+	# in build duration
 	rm -rf $(BUILDDIR)/html/_images
 	#rm -rf _build/doctrees/
 	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(BUILDDIR)/html
